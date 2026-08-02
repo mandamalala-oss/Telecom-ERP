@@ -1,0 +1,125 @@
+// @vitest-environment jsdom
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { EntityFormModal, type FieldConfig } from './EntityFormModal'
+
+// vitest runs with globals:false, so RTL's auto-cleanup never registers —
+// unmount after every test or renders accumulate and queries go ambiguous.
+afterEach(cleanup)
+
+// Lookup dropdowns load options through makeApi — stub it so no Supabase
+// client (or env vars) is needed.
+const mocks = vi.hoisted(() => ({ makeApi: vi.fn() }))
+vi.mock('@/lib/api/crud', () => ({ makeApi: mocks.makeApi }))
+
+const siteRows = [
+  { id: 's1', siteId: 'MDG-001', name: 'Site Alpha', latitude: -18.9, longitude: 47.5 },
+  { id: 's2', siteId: 'MDG-002', name: 'Site Beta', latitude: -19.0, longitude: 47.6 },
+]
+
+function renderForm(fields: FieldConfig[], initial?: Record<string, any>) {
+  const onSubmit = vi.fn(async (_values: Record<string, any>) => {})
+  render(<EntityFormModal open onClose={() => {}} title="Test" fields={fields} initial={initial} onSubmit={onSubmit} />)
+  return onSubmit
+}
+
+describe('EntityFormModal — required validation', () => {
+  it('blocks submit and names the missing required fields', async () => {
+    const onSubmit = renderForm([{ key: 'name', label: 'Name', type: 'text', required: true }])
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Please fill in: Name')).toBeTruthy()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+})
+
+describe('EntityFormModal — number handling', () => {
+  it('drops a blank number field instead of coercing it to 0', async () => {
+    const onSubmit = renderForm([
+      { key: 'amount', label: 'Amount', type: 'number' },
+      { key: 'name', label: 'Name', type: 'text' },
+    ])
+    await userEvent.type(screen.getByLabelText('Name'), 'Invoice')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    const payload = onSubmit.mock.calls[0][0]
+    expect(payload.amount).toBeUndefined()
+    expect(payload.name).toBe('Invoice')
+  })
+
+  it('parses valid numbers as numbers', async () => {
+    const onSubmit = renderForm([{ key: 'amount', label: 'Amount', type: 'number' }])
+    await userEvent.type(screen.getByLabelText('Amount'), '12.5')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toEqual({ amount: 12.5 })
+  })
+
+  // Note: the Number.isFinite rejection path can't be exercised through a
+  // rendered <input type="number"> — jsdom sanitizes every non-numeric value
+  // to '' — so it's covered at the unit level in formPayload.test.ts.
+})
+
+describe('EntityFormModal — date normalization', () => {
+  it('normalizes timestamptz strings to YYYY-MM-DD before submit', async () => {
+    const onSubmit = renderForm([{ key: 'dueDate', label: 'Due Date', type: 'date' }], {
+      dueDate: '2026-01-05T12:00:00.000Z',
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toEqual({ dueDate: '2026-01-05' })
+  })
+})
+
+describe('EntityFormModal — tags & checkboxes', () => {
+  it('parses comma-separated tags, trimming empties', async () => {
+    const onSubmit = renderForm([{ key: 'tags', label: 'Tags', type: 'tags' }])
+    await userEvent.type(screen.getByLabelText('Tags (comma separated)'), ' 4G , 5G ,, MW ')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toEqual({ tags: ['4G', '5G', 'MW'] })
+  })
+
+  it('defaults untouched checkboxes to false (not undefined)', async () => {
+    const onSubmit = renderForm([{ key: 'isPrimary', label: 'Primary Contact', type: 'checkbox' }])
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toEqual({ isPrimary: false })
+  })
+})
+
+describe('EntityFormModal — lookup auto-population', () => {
+  const lookupFields: FieldConfig[] = [
+    {
+      key: 'siteCode',
+      label: 'Site Code',
+      type: 'select',
+      required: true,
+      lookup: {
+        table: 'sites',
+        valueKey: 'siteId',
+        labelKey: 'name',
+        labelFormat: '{siteId} — {name}',
+        populate: { siteName: 'name', latitude: 'latitude' },
+      },
+    },
+    { key: 'siteName', label: 'Site Name', type: 'text' },
+    { key: 'latitude', label: 'Latitude', type: 'number' },
+  ]
+
+  it('renders formatted options from the lookup table', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => siteRows })
+    renderForm(lookupFields)
+    expect(await screen.findByRole('option', { name: 'MDG-001 — Site Alpha' })).toBeTruthy()
+    expect(screen.getByRole('option', { name: 'MDG-002 — Site Beta' })).toBeTruthy()
+  })
+
+  it('auto-fills populate fields when an option is chosen', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => siteRows })
+    const onSubmit = renderForm(lookupFields)
+    await userEvent.selectOptions(await screen.findByLabelText('Site Code'), 'MDG-001')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ siteCode: 'MDG-001', siteName: 'Site Alpha', latitude: -18.9 })
+  })
+})

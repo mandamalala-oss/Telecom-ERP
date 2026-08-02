@@ -3,6 +3,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { makeApi } from '@/lib/api/crud'
+import { buildPayload } from '@/lib/formPayload'
 
 export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags'
 
@@ -117,32 +118,12 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
 
     setSaving(true)
     try {
-      const payload: Record<string, any> = { ...values }
-      for (const f of fields) {
-        if (f.type === 'tags') {
-          payload[f.key] = String(values[f.key] ?? '')
-            .split(',')
-            .map((s: string) => s.trim())
-            .filter(Boolean)
-        } else if (f.type === 'number') {
-          const v = values[f.key]
-          if (v === '' || v === undefined || v === null) {
-            // Never write 0 for a blank field: drop it so the DB default
-            // applies (or the stored value is kept on edit).
-            delete payload[f.key]
-          } else {
-            const n = Number(v)
-            if (!Number.isFinite(n)) {
-              setError(`"${f.label}" must be a valid number`)
-              return
-            }
-            payload[f.key] = n
-          }
-        } else if (f.type === 'date' && typeof payload[f.key] === 'string') {
-          // <input type="date"> only accepts YYYY-MM-DD; normalize ISO
-          // timestamps coming back from timestamptz columns.
-          payload[f.key] = (payload[f.key] as string).slice(0, 10)
-        }
+      // Tags → arrays, numbers → numbers (blank dropped, never 0),
+      // dates → YYYY-MM-DD. Pure logic, unit-tested in formPayload.test.ts.
+      const { payload, error: payloadError } = buildPayload(fields, values)
+      if (payloadError) {
+        setError(payloadError)
+        return
       }
       await onSubmit(payload)
       onClose()
