@@ -39,7 +39,7 @@ const TECHS = ['2G', '3G', '4G', '4G+', '5G', 'MW', 'VSAT']
 
 export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   leads: [
-    { key: 'company', label: 'Company', type: 'text', required: true },
+    { key: 'company', label: 'Company', type: 'select', required: true, lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'contact', label: 'Contact', type: 'text' },
     { key: 'email', label: 'Email', type: 'text' },
     { key: 'phone', label: 'Phone', type: 'text' },
@@ -51,7 +51,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   ],
   opportunities: [
     { key: 'name', label: 'Name', type: 'text', required: true },
-    { key: 'customerName', label: 'Customer', type: 'text' },
+    { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'stage', label: 'Stage', type: 'select', options: ['prospecting', 'proposal', 'negotiation', 'closed_won', 'closed_lost'] },
     { key: 'value', label: 'Value (Ar)', type: 'number' },
     { key: 'probability', label: 'Probability %', type: 'number' },
@@ -72,7 +72,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'status', label: 'Status', type: 'select', options: ['active', 'inactive'] },
   ],
   contacts: [
-    { key: 'companyName', label: 'Company', type: 'text' },
+    { key: 'companyName', label: 'Company', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'firstName', label: 'First Name', type: 'text', required: true },
     { key: 'lastName', label: 'Last Name', type: 'text' },
     { key: 'title', label: 'Title', type: 'text' },
@@ -83,7 +83,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   sites: [
     { key: 'siteId', label: 'Site ID', type: 'text', required: true, placeholder: 'MDG-TAN-001' },
     { key: 'name', label: 'Name', type: 'text', required: true },
-    { key: 'customerName', label: 'Customer', type: 'text' },
+    { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'region', label: 'Region', type: 'select', options: REGIONS },
     { key: 'latitude', label: 'Latitude', type: 'number' },
     { key: 'longitude', label: 'Longitude', type: 'number' },
@@ -98,7 +98,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   projects: [
     { key: 'name', label: 'Name', type: 'text', required: true },
     { key: 'code', label: 'Code', type: 'text', required: true, placeholder: 'PRJ-2026-001' },
-    { key: 'customerName', label: 'Customer', type: 'text' },
+    { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'status', label: 'Status', type: 'select', options: ['not_started', 'in_progress', 'on_hold', 'completed', 'cancelled'] },
     { key: 'currentPhase', label: 'Current Phase', type: 'select', options: ['survey', 'installation', 'integration', 'atp', 'acceptance'] },
     { key: 'startDate', label: 'Start Date', type: 'date' },
@@ -111,7 +111,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   ],
   tasks: [
     { key: 'title', label: 'Title', type: 'text', required: true },
-    { key: 'projectName', label: 'Project', type: 'text' },
+    { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
     { key: 'description', label: 'Description', type: 'textarea' },
     { key: 'status', label: 'Status', type: 'select', options: ['backlog', 'todo', 'in_progress', 'review', 'done'] },
     { key: 'priority', label: 'Priority', type: 'select', options: ['low', 'medium', 'high', 'critical'] },
@@ -138,24 +138,24 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'reserved', label: 'Reserved', type: 'number' },
     { key: 'reorderPoint', label: 'Reorder Point', type: 'number' },
     { key: 'unitCost', label: 'Unit Cost (Ar)', type: 'number' },
-    { key: 'warehouseName', label: 'Warehouse', type: 'text' },
+    { key: 'warehouseName', label: 'Warehouse', type: 'select', lookup: { table: 'warehouses', valueKey: 'name', labelKey: 'name' } },
     { key: 'location', label: 'Bin/Location', type: 'text' },
     { key: 'serializable', label: 'Serialized items', type: 'checkbox' },
   ],
   stock_movements: [
-    { key: 'itemName', label: 'Item', type: 'text', required: true },
+    { key: 'itemName', label: 'Item', type: 'select', required: true, lookup: { table: 'inventory_items', valueKey: 'name', labelKey: 'name', labelFormat: '{sku} — {name}', orderBy: 'name', populate: { itemId: 'id' } } },
     { key: 'type', label: 'Type', type: 'select', options: ['in', 'out', 'transfer', 'adjustment'] },
     { key: 'quantity', label: 'Quantity', type: 'number', required: true },
     { key: 'fromWarehouse', label: 'From Warehouse', type: 'text' },
     { key: 'toWarehouse', label: 'To Warehouse', type: 'text' },
-    { key: 'projectName', label: 'Project', type: 'text' },
+    { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
     { key: 'reason', label: 'Reason', type: 'text' },
     { key: 'date', label: 'Date', type: 'date' },
     { key: 'performedBy', label: 'Performed By', type: 'text' },
   ],
   quotes: [
     { key: 'number', label: 'Number', type: 'text', required: true, placeholder: 'QT-2026-001' },
-    { key: 'customerName', label: 'Customer', type: 'text' },
+    { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'sent', 'accepted', 'rejected', 'expired'] },
     { key: 'subtotal', label: 'Subtotal (Ar)', type: 'number' },
     { key: 'taxRate', label: 'Tax Rate %', type: 'number' },
@@ -166,7 +166,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   ],
   invoices: [
     { key: 'number', label: 'Number', type: 'text', required: true, placeholder: 'INV-2026-001' },
-    { key: 'customerName', label: 'Customer', type: 'text' },
+    { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'sent', 'partially_paid', 'paid', 'overdue', 'cancelled'] },
     { key: 'subtotal', label: 'Subtotal (Ar)', type: 'number' },
     { key: 'taxRate', label: 'Tax Rate %', type: 'number' },
@@ -179,7 +179,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   ],
   purchase_orders: [
     { key: 'number', label: 'Number', type: 'text', required: true, placeholder: 'PO-2026-001' },
-    { key: 'vendorName', label: 'Vendor', type: 'text' },
+    { key: 'vendorName', label: 'Vendor', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'approved', 'sent', 'partial', 'received', 'cancelled'] },
     { key: 'subtotal', label: 'Subtotal (Ar)', type: 'number' },
     { key: 'tax', label: 'Tax (Ar)', type: 'number' },
@@ -190,7 +190,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   ],
   payments: [
     { key: 'invoiceNumber', label: 'Invoice #', type: 'text' },
-    { key: 'customerName', label: 'Customer', type: 'text' },
+    { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'amount', label: 'Amount (Ar)', type: 'number', required: true },
     { key: 'date', label: 'Date', type: 'date' },
     { key: 'method', label: 'Method', type: 'select', options: ['bank_transfer', 'mobile_money', 'check', 'cash'] },
@@ -198,8 +198,8 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'notes', label: 'Notes', type: 'textarea' },
   ],
   evm_metrics: [
-    { key: 'projectName', label: 'Project', type: 'text', required: true },
-    { key: 'customerName', label: 'Customer', type: 'text' },
+    { key: 'projectName', label: 'Project', type: 'select', required: true, lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
+    { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'dataDate', label: 'Data Date', type: 'date' },
     { key: 'bac', label: 'BAC (Ar)', type: 'number' },
     { key: 'pv', label: 'PV (Ar)', type: 'number' },
@@ -208,7 +208,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'percentComplete', label: 'Percent Complete', type: 'number' },
   ],
   survey_reports: [
-    { key: 'siteCode', label: 'Site Code', type: 'text', required: true },
+    { key: 'siteCode', label: 'Site Code', type: 'select', required: true, lookup: { table: 'sites', valueKey: 'siteId', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId', populate: { siteName: 'name', latitude: 'latitude', longitude: 'longitude', siteId: 'id' } } },
     { key: 'siteName', label: 'Site Name', type: 'text' },
     { key: 'status', label: 'Status', type: 'select', options: ['planned', 'assigned', 'survey_started', 'survey_completed', 'approved'] },
     { key: 'scheduledDate', label: 'Scheduled Date', type: 'date' },
@@ -226,14 +226,18 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'recommendations', label: 'Recommendations', type: 'textarea' },
   ],
   installation_records: [
-    { key: 'siteId', label: 'Site ID', type: 'text' },
+    { key: 'siteCode', label: 'Site Code', type: 'select', lookup: { table: 'sites', valueKey: 'siteId', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId', populate: { siteName: 'name', siteId: 'id' } } },
+    { key: 'siteName', label: 'Site Name', type: 'text' },
+    { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
     { key: 'status', label: 'Status', type: 'select', options: ['pending', 'material_delivered', 'install_started', 'install_completed', 'quality_check', 'approved'] },
     { key: 'supervisorId', label: 'Supervisor', type: 'text' },
     { key: 'team', label: 'Team', type: 'tags' },
     { key: 'comments', label: 'Comments', type: 'textarea' },
   ],
   integration_records: [
-    { key: 'siteId', label: 'Site ID', type: 'text' },
+    { key: 'siteCode', label: 'Site Code', type: 'select', lookup: { table: 'sites', valueKey: 'siteId', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId', populate: { siteName: 'name', siteId: 'id' } } },
+    { key: 'siteName', label: 'Site Name', type: 'text' },
+    { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
     { key: 'status', label: 'Status', type: 'select', options: ['pending', 'integration_started', 'testing', 'integrated', 'accepted'] },
     { key: 'engineerId', label: 'Engineer', type: 'text' },
     { key: 'bbuModel', label: 'BBU Model', type: 'text' },
@@ -256,7 +260,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'atpNumber', label: 'ATP Number', type: 'text', required: true, placeholder: 'ATP-2026-001' },
     { key: 'siteName', label: 'Site Name', type: 'text' },
     { key: 'siteCode', label: 'Site Code', type: 'text' },
-    { key: 'templateName', label: 'Template', type: 'text' },
+    { key: 'templateName', label: 'Template', type: 'select', lookup: { table: 'atp_templates', valueKey: 'name', labelKey: 'name' } },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'submitted', 'reviewed', 'approved', 'customer_accepted', 'failed'] },
     { key: 'overallResult', label: 'Overall Result', type: 'select', options: ['pass', 'fail', 'partial'] },
     { key: 'engineerName', label: 'Engineer', type: 'text' },
@@ -265,8 +269,8 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   ],
   boqs: [
     { key: 'boqNumber', label: 'BOQ Number', type: 'text', required: true, placeholder: 'BOQ-2026-001' },
-    { key: 'projectName', label: 'Project', type: 'text' },
-    { key: 'customerName', label: 'Customer', type: 'text' },
+    { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
+    { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'siteName', label: 'Site', type: 'text' },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'submitted', 'approved', 'revised', 'superseded'] },
     { key: 'subtotal', label: 'Subtotal (Ar)', type: 'number' },
@@ -328,7 +332,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   purchase_requests: [
     { key: 'prNumber', label: 'PR Number', type: 'text', required: true, placeholder: 'PR-2026-001' },
     { key: 'requestedByName', label: 'Requested By', type: 'text' },
-    { key: 'projectName', label: 'Project', type: 'text' },
+    { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
     { key: 'urgency', label: 'Urgency', type: 'select', options: ['normal', 'urgent', 'critical'] },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'pending_approval', 'approved', 'rejected', 'po_raised', 'cancelled'] },
     { key: 'totalEstimated', label: 'Total Estimated (Ar)', type: 'number' },
@@ -336,7 +340,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'requiredBy', label: 'Required By', type: 'date' },
   ],
   subcontractors: [
-    { key: 'companyName', label: 'Company', type: 'text', required: true },
+    { key: 'companyName', label: 'Company', type: 'select', required: true, lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'contactPerson', label: 'Contact Person', type: 'text' },
     { key: 'email', label: 'Email', type: 'text' },
     { key: 'phone', label: 'Phone', type: 'text' },
@@ -359,7 +363,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   ],
   contracts: [
     { key: 'contractNumber', label: 'Contract Number', type: 'text', required: true },
-    { key: 'customerName', label: 'Customer', type: 'text' },
+    { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'type', label: 'Type', type: 'select', options: ['framework', 'project', 'maintenance', 'supply'] },
     { key: 'value', label: 'Value (Ar)', type: 'number' },
     { key: 'startDate', label: 'Start Date', type: 'date' },

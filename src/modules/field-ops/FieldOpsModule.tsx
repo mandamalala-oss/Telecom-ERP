@@ -147,7 +147,7 @@ export function FieldOpsModule() {
           {installs.map(ins => (
             <Card key={ins.id} hover padding={false} onClick={() => setSelInstall(ins)} className="p-4 space-y-3">
               <div className="flex items-start justify-between">
-                <div><p className="text-sm font-bold text-slate-900 dark:text-white">Installation Record</p><p className="text-xs text-slate-500">Site: {ins.siteId}</p></div>
+                <div><p className="text-sm font-bold text-slate-900 dark:text-white">Installation Record</p><p className="text-xs text-slate-500">Site: {ins.siteName || ins.siteCode || ins.siteId}</p></div>
                 <Badge status={ins.status} />
               </div>
               <Stepper steps={INSTALL_FLOW} current={ins.status} />
@@ -167,7 +167,7 @@ export function FieldOpsModule() {
           {integs.map(intg => (
             <Card key={intg.id} hover padding={false} onClick={() => setSelInteg(intg)} className="p-4 space-y-3">
               <div className="flex items-start justify-between">
-                <div><p className="text-sm font-bold text-slate-900 dark:text-white">{intg.bbuModel}</p><p className="text-xs text-slate-500">Site: {intg.siteId}</p></div>
+                <div><p className="text-sm font-bold text-slate-900 dark:text-white">{intg.bbuModel}</p><p className="text-xs text-slate-500">Site: {intg.siteName || intg.siteCode || intg.siteId}</p></div>
                 <Badge status={intg.status} />
               </div>
               <Stepper steps={INTEG_FLOW} current={intg.status} />

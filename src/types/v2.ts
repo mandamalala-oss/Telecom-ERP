@@ -72,6 +72,9 @@ export interface InstallationRecord {
   id: string
   siteId: string
   projectId: string
+  siteCode?: string
+  siteName?: string
+  projectName?: string
   status: InstallStatus
   team: string[]
   supervisorId: string
@@ -103,6 +106,9 @@ export interface IntegrationRecord {
   id: string
   siteId: string
   projectId: string
+  siteCode?: string
+  siteName?: string
+  projectName?: string
   status: IntegrationStatus
   engineerId: string
   startedAt?: string

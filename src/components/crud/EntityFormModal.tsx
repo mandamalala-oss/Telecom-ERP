@@ -1,9 +1,25 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
+import { makeApi } from '@/lib/api/crud'
 
 export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags'
+
+export interface LookupConfig {
+  /** Table to load options from (TABLES value, e.g. 'sites'). */
+  table: string
+  /** Row field whose value is stored in this form field (e.g. site code). */
+  valueKey: string
+  /** Row field used as the option label. */
+  labelKey: string
+  /** Optional '{field}' template for richer labels, e.g. '{siteId} — {name}'. */
+  labelFormat?: string
+  /** Order the option list by this row field (defaults to labelKey). */
+  orderBy?: string
+  /** formField → rowField: fields auto-filled when an option is chosen. */
+  populate?: Record<string, string>
+}
 
 export interface FieldConfig {
   key: string
@@ -12,6 +28,8 @@ export interface FieldConfig {
   options?: string[]
   required?: boolean
   placeholder?: string
+  /** Turns the field into a reference dropdown backed by another table. */
+  lookup?: LookupConfig
 }
 
 interface Props {
@@ -30,6 +48,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   const [values, setValues] = useState<Record<string, any>>(() => buildInitial(fields, initial))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lookupOptions, setLookupOptions] = useState<Record<string, any[]>>({})
 
   // Re-seed values whenever the modal opens for a (different) record. Only
   // reseed on open transitions — never on close — so reopening the same
@@ -41,9 +60,47 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
     setValues(buildInitial(fields, initial))
   }
 
+  // Load reference options for every lookup field, once per open.
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    const tables = [...new Set(fields.filter((f) => f.lookup).map((f) => f.lookup!.table))]
+    Promise.all(
+      tables.map(async (table) => {
+        const lookup = fields.find((f) => f.lookup?.table === table)!.lookup!
+        try {
+          const rows = await makeApi<any>(table).list({ orderBy: lookup.orderBy ?? lookup.labelKey, ascending: true })
+          if (!cancelled) setLookupOptions((prev) => ({ ...prev, [table]: rows }))
+        } catch (e: any) {
+          console.warn(`[lookup] failed to load options for ${table}:`, e?.message ?? e)
+        }
+      })
+    )
+    return () => { cancelled = true }
+  }, [open, fields])
+
   if (!open) return null
 
   const set = (k: string, v: any) => setValues((prev) => ({ ...prev, [k]: v }))
+
+  const handleLookupChange = (f: FieldConfig, value: string) => {
+    set(f.key, value)
+    const lookup = f.lookup
+    if (!lookup?.populate) return
+    const row = (lookupOptions[lookup.table] ?? []).find((r) => r[lookup.valueKey] === value)
+    if (!row) return
+    for (const [formField, rowField] of Object.entries(lookup.populate)) {
+      set(formField, row[rowField] ?? '')
+    }
+  }
+
+  const lookupLabel = (f: FieldConfig, row: Record<string, any>) => {
+    const lookup = f.lookup!
+    if (lookup.labelFormat) {
+      return lookup.labelFormat.replace(/\{(\w+)\}/g, (_, k: string) => row[k] ?? '')
+    }
+    return row[lookup.labelKey] ?? ''
+  }
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -117,12 +174,21 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
           {fields.map((f) => (
             <div key={f.key} className={f.type === 'textarea' ? 'sm:col-span-2' : ''}>
               {f.type === 'select' ? (
-                <Select label={f.label} value={values[f.key] ?? ''} onChange={(e) => set(f.key, e.target.value)}>
-                  <option value="">Select…</option>
-                  {f.options?.map((o) => (
-                    <option key={o} value={o}>{o.replace(/_/g, ' ')}</option>
-                  ))}
-                </Select>
+                f.lookup ? (
+                  <Select label={f.label} value={values[f.key] ?? ''} onChange={(e) => handleLookupChange(f, e.target.value)}>
+                    <option value="">Select…</option>
+                    {(lookupOptions[f.lookup.table] ?? []).map((row) => (
+                      <option key={row[f.lookup!.valueKey]} value={row[f.lookup!.valueKey]}>{lookupLabel(f, row)}</option>
+                    ))}
+                  </Select>
+                ) : (
+                  <Select label={f.label} value={values[f.key] ?? ''} onChange={(e) => set(f.key, e.target.value)}>
+                    <option value="">Select…</option>
+                    {f.options?.map((o) => (
+                      <option key={o} value={o}>{o.replace(/_/g, ' ')}</option>
+                    ))}
+                  </Select>
+                )
               ) : f.type === 'textarea' ? (
                 <Textarea label={f.label} value={values[f.key] ?? ''} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder} />
               ) : f.type === 'checkbox' ? (
