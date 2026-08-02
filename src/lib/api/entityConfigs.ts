@@ -127,7 +127,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'city', label: 'City', type: 'text' },
     { key: 'manager', label: 'Manager', type: 'text' },
   ],
-  inventoryItems: [
+  inventory_items: [
     { key: 'sku', label: 'SKU', type: 'text', required: true },
     { key: 'name', label: 'Name', type: 'text', required: true },
     { key: 'category', label: 'Category', type: 'select', options: ['antenna', 'radio', 'router', 'cable', 'power_equipment', 'hardware', 'tools', 'transport'] },
@@ -142,7 +142,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'location', label: 'Bin/Location', type: 'text' },
     { key: 'serializable', label: 'Serialized items', type: 'checkbox' },
   ],
-  stockMovements: [
+  stock_movements: [
     { key: 'itemName', label: 'Item', type: 'text', required: true },
     { key: 'type', label: 'Type', type: 'select', options: ['in', 'out', 'transfer', 'adjustment'] },
     { key: 'quantity', label: 'Quantity', type: 'number', required: true },
@@ -177,7 +177,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'dueDate', label: 'Due Date', type: 'date', required: true },
     { key: 'notes', label: 'Notes', type: 'textarea' },
   ],
-  purchaseOrders: [
+  purchase_orders: [
     { key: 'number', label: 'Number', type: 'text', required: true, placeholder: 'PO-2026-001' },
     { key: 'vendorName', label: 'Vendor', type: 'text' },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'approved', 'sent', 'partial', 'received', 'cancelled'] },
@@ -197,7 +197,17 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'reference', label: 'Reference', type: 'text' },
     { key: 'notes', label: 'Notes', type: 'textarea' },
   ],
-  surveyReports: [
+  evm_metrics: [
+    { key: 'projectName', label: 'Project', type: 'text', required: true },
+    { key: 'customerName', label: 'Customer', type: 'text' },
+    { key: 'dataDate', label: 'Data Date', type: 'date' },
+    { key: 'bac', label: 'BAC (Ar)', type: 'number' },
+    { key: 'pv', label: 'PV (Ar)', type: 'number' },
+    { key: 'ev', label: 'EV (Ar)', type: 'number' },
+    { key: 'ac', label: 'AC (Ar)', type: 'number' },
+    { key: 'percentComplete', label: 'Percent Complete', type: 'number' },
+  ],
+  survey_reports: [
     { key: 'siteCode', label: 'Site Code', type: 'text', required: true },
     { key: 'siteName', label: 'Site Name', type: 'text' },
     { key: 'status', label: 'Status', type: 'select', options: ['planned', 'assigned', 'survey_started', 'survey_completed', 'approved'] },
@@ -215,14 +225,14 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'comments', label: 'Comments', type: 'textarea' },
     { key: 'recommendations', label: 'Recommendations', type: 'textarea' },
   ],
-  installationRecords: [
+  installation_records: [
     { key: 'siteId', label: 'Site ID', type: 'text' },
     { key: 'status', label: 'Status', type: 'select', options: ['pending', 'material_delivered', 'install_started', 'install_completed', 'quality_check', 'approved'] },
     { key: 'supervisorId', label: 'Supervisor', type: 'text' },
     { key: 'team', label: 'Team', type: 'tags' },
     { key: 'comments', label: 'Comments', type: 'textarea' },
   ],
-  integrationRecords: [
+  integration_records: [
     { key: 'siteId', label: 'Site ID', type: 'text' },
     { key: 'status', label: 'Status', type: 'select', options: ['pending', 'integration_started', 'testing', 'integrated', 'accepted'] },
     { key: 'engineerId', label: 'Engineer', type: 'text' },
@@ -235,14 +245,14 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'throughputUL', label: 'Throughput UL', type: 'number' },
     { key: 'comments', label: 'Comments', type: 'textarea' },
   ],
-  atpTemplates: [
+  atp_templates: [
     { key: 'name', label: 'Name', type: 'text', required: true },
     { key: 'version', label: 'Version', type: 'text' },
     { key: 'customer', label: 'Customer', type: 'text' },
     { key: 'technologies', label: 'Technologies', type: 'tags' },
     { key: 'isActive', label: 'Active', type: 'checkbox' },
   ],
-  atpRecords: [
+  atp_records: [
     { key: 'atpNumber', label: 'ATP Number', type: 'text', required: true, placeholder: 'ATP-2026-001' },
     { key: 'siteName', label: 'Site Name', type: 'text' },
     { key: 'siteCode', label: 'Site Code', type: 'text' },
@@ -315,7 +325,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'nextCalibration', label: 'Next Calibration', type: 'date' },
     { key: 'notes', label: 'Notes', type: 'textarea' },
   ],
-  purchaseRequests: [
+  purchase_requests: [
     { key: 'prNumber', label: 'PR Number', type: 'text', required: true, placeholder: 'PR-2026-001' },
     { key: 'requestedByName', label: 'Requested By', type: 'text' },
     { key: 'projectName', label: 'Project', type: 'text' },
@@ -366,6 +376,14 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'department', label: 'Department', type: 'text' },
     { key: 'phone', label: 'Phone', type: 'text' },
   ],
+}
+
+// Guard: every table needs a form config, otherwise its New/Edit modal
+// renders blank. Warn loudly instead of letting it fail silently.
+for (const t of Object.values(TABLES)) {
+  if (!FIELD_CONFIGS[t]) {
+    console.warn(`[entityConfigs] Missing FIELD_CONFIGS for table "${t}" — its form will be blank`)
+  }
 }
 
 export { TECHS, REGIONS }
