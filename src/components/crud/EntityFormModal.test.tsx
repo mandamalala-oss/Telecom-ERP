@@ -88,6 +88,37 @@ describe('EntityFormModal — tags & checkboxes', () => {
   })
 })
 
+describe('EntityFormModal — fresh form on every open', () => {
+  it('resets to blank after cancel/reopen (no stale input)', async () => {
+    const fields: FieldConfig[] = [{ key: 'name', label: 'Name', type: 'text' }]
+    const onSubmit = vi.fn(async (_v: Record<string, any>) => {})
+    const { rerender } = render(
+      <EntityFormModal open onClose={() => {}} title="Test" fields={fields} onSubmit={onSubmit} />
+    )
+    await userEvent.type(screen.getByLabelText('Name'), 'Invoice X')
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Invoice X')
+
+    // Close (cancel) then reopen as a fresh create — must be blank again.
+    rerender(<EntityFormModal open={false} onClose={() => {}} title="Test" fields={fields} onSubmit={onSubmit} />)
+    rerender(<EntityFormModal open onClose={() => {}} title="Test" fields={fields} onSubmit={onSubmit} />)
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('')
+  })
+
+  it('re-seeds from the latest initial when reopening the same record', async () => {
+    const fields: FieldConfig[] = [{ key: 'name', label: 'Name', type: 'text' }]
+    const onSubmit = vi.fn(async (_v: Record<string, any>) => {})
+    const { rerender } = render(
+      <EntityFormModal open onClose={() => {}} title="Test" fields={fields} initial={{ id: 'a', name: 'Old' }} onSubmit={onSubmit} />
+    )
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('Old')
+
+    // Saved record comes back with fresh data → reopen shows the new value.
+    rerender(<EntityFormModal open={false} onClose={() => {}} title="Test" fields={fields} initial={{ id: 'a', name: 'Old' }} onSubmit={onSubmit} />)
+    rerender(<EntityFormModal open onClose={() => {}} title="Test" fields={fields} initial={{ id: 'a', name: 'New' }} onSubmit={onSubmit} />)
+    expect((screen.getByLabelText('Name') as HTMLInputElement).value).toBe('New')
+  })
+})
+
 describe('EntityFormModal — lookup auto-population', () => {
   const lookupFields: FieldConfig[] = [
     {

@@ -13,7 +13,7 @@ export interface User {
 
 export const ROLE_PERMISSIONS: Record<Role, string[]> = {
   admin:    ['*'],
-  pm:       ['dashboard','crm','customers','sites','projects','tasks','evm','inventory'],
+  pm:       ['dashboard','crm','customers','sites','projects','tasks','evm','inventory','finance'],
   engineer: ['sites','projects','tasks','inventory'],
   finance:  ['dashboard','finance','customers','evm'],
   viewer:   ['dashboard','sites','projects'],
@@ -64,7 +64,6 @@ export interface Company {
   city: string;
   address: string;
   website: string;
-  revenue: number;
   status: 'active' | 'inactive';
   createdAt: string;
 }
@@ -92,19 +91,18 @@ export interface Site {
   id: string;
   siteId: string;
   name: string;
-  customerId: string;
-  customerName: string;
   region: Region;
   latitude: number;
   longitude: number;
   technology: Technology[];
   status: SiteStatus;
   priority: 'low' | 'medium' | 'high' | 'critical';
-  projectId?: string;
   towerType: TowerType;
   powerSource: PowerSource;
   accessType: 'road' | 'offroad' | 'boat';
+  distanceKm?: number;
   altitude?: number;
+  revenue: number;
   notes: string;
   createdAt: string;
   updatedAt: string;
@@ -127,10 +125,9 @@ export interface PhaseDetail {
 export interface Project {
   id: string;
   name: string;
-  code: string;
   customerId: string;
   customerName: string;
-  siteIds: string[];
+  siteId?: string;
   status: ProjectStatus;
   currentPhase: ProjectPhase;
   phases: PhaseDetail[];
@@ -138,6 +135,7 @@ export interface Project {
   endDate: string;
   budget: number;
   spent: number;
+  revenue: number;
   pm: string;
   team: string[];
   progress: number;

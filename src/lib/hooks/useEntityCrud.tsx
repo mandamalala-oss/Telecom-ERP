@@ -10,7 +10,8 @@ export function useEntityCrud<T extends { id?: string }>(
   table: string,
   entityLabel: string,
   fieldsOverride?: FieldConfig[],
-  onCreated?: (row: T, values: Record<string, any>) => Promise<void>
+  onCreated?: (row: T, values: Record<string, any>) => Promise<void>,
+  transformPayload?: (values: Record<string, any>) => Record<string, any>
 ) {
   const entity = useEntity<T>(table)
   const [modalOpen, setModalOpen] = useState(false)
@@ -22,13 +23,16 @@ export function useEntityCrud<T extends { id?: string }>(
   const close = () => setModalOpen(false)
 
   const handleSubmit = async (values: Record<string, any>) => {
+    // Optional pre-save transform (e.g. EVM derives CPI/SPI/EAC from
+    // BAC/PV/EV/AC before the row is written).
+    const payload = transformPayload ? transformPayload(values) : values
     if (editing && editing.id) {
-      const row = await entity.update(editing.id, values as Partial<T>)
+      const row = await entity.update(editing.id, payload as Partial<T>)
       // Keep the modal's `initial` in sync with what was actually saved so a
       // reopen of the same record shows fresh values, not the pre-save ones.
       setEditing(row)
     } else {
-      const row = await entity.create(values as Partial<T>)
+      const row = await entity.create(payload as Partial<T>)
       // Optional post-create side effects (e.g. inventory movement → adjust
       // item quantity, payment → update invoice paid). Errors surface in the
       // modal, like any other submit failure.

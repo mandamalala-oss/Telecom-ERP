@@ -86,7 +86,7 @@
 | Subcontractors | ✅ | ✅ | ❌ | ✅ | ❌ |
 | Documents (general) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Documents (confidential) | ✅ | ✅ | ❌ | ✅ | ❌ |
-| Finance | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Finance | ✅ | ✅ | ❌ | ✅ | ❌ |
 | User Management | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 ---

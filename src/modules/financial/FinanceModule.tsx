@@ -1,23 +1,35 @@
 import { useState } from 'react'
-import { Plus } from 'lucide-react'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { TABLES } from '@/lib/api/entityConfigs'
+import { resolvePaidOnStatusChange } from '@/lib/invoiceStatus'
 import type { Quote, Invoice, PurchaseOrder, Payment } from '@/types'
 
 const fmt = (n: number) => (n ?? 0) >= 1e6 ? `${((n ?? 0)/1e6).toFixed(2)}M Ar` : `${(n ?? 0).toLocaleString()} Ar`
+
+const INVOICE_STATUSES = ['draft', 'sent', 'partially_paid', 'paid', 'overdue', 'cancelled']
+
+const INVOICE_STATUS_COLOR: Record<string, string> = {
+  draft: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300',
+  sent: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300',
+  partially_paid: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300',
+  paid: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300',
+  overdue: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300',
+  cancelled: 'bg-slate-100 dark:bg-slate-700 text-slate-500',
+}
 
 type Tab = 'invoices' | 'quotes' | 'purchase_orders' | 'payments'
 
 export function FinanceModule() {
   const [tab, setTab] = useState<Tab>('invoices')
-  const { data: invoices, error: invErr, openCreate: newInv, update: updateInvoice, modal: invModal } = useEntityCrud<Invoice>(TABLES.invoices, 'Invoice')
-  const { data: quotes, error: quoErr, openCreate: newQuo, modal: quoModal } = useEntityCrud<Quote>(TABLES.quotes, 'Quote')
-  const { data: pos, error: poErr, openCreate: newPo, modal: poModal } = useEntityCrud<PurchaseOrder>(TABLES.purchaseOrders, 'Purchase Order')
-  const { data: payments, error: payErr, openCreate: newPay, modal: payModal } = useEntityCrud<Payment>(
+  const { data: invoices, error: invErr, openCreate: newInv, openEdit: editInv, remove: removeInv, update: updateInvoice, modal: invModal } = useEntityCrud<Invoice>(TABLES.invoices, 'Invoice')
+  const { data: quotes, error: quoErr, openCreate: newQuo, openEdit: editQuo, remove: removeQuo, modal: quoModal } = useEntityCrud<Quote>(TABLES.quotes, 'Quote')
+  const { data: pos, error: poErr, openCreate: newPo, openEdit: editPo, remove: removePo, modal: poModal } = useEntityCrud<PurchaseOrder>(TABLES.purchaseOrders, 'Purchase Order')
+  const { data: payments, error: payErr, openCreate: newPay, openEdit: editPay, remove: removePay, modal: payModal } = useEntityCrud<Payment>(
     TABLES.payments, 'Payment', undefined, async (payment) => {
       // Keep invoice.paid in sync: revenue KPIs and balances read the
       // invoice row, so a payment must update it or they drift apart.
@@ -28,6 +40,7 @@ export function FinanceModule() {
     }
   )
   const [selInv, setSelInv] = useState<Invoice | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const totalRevenue    = invoices.reduce((s, i) => s + (i.paid ?? 0), 0)
   const pendingAR       = invoices.reduce((s, i) => s + (i.balance ?? 0), 0)
@@ -46,6 +59,41 @@ export function FinanceModule() {
     else if (tab === 'quotes') newQuo()
     else if (tab === 'purchase_orders') newPo()
     else newPay()
+  }
+
+  // Quick status change straight from the table — no edit modal needed.
+  const changeStatus = async (inv: Invoice, status: string) => {
+    if (status === inv.status) return
+    try {
+      setActionError(null)
+      const patch: Partial<Invoice> = { status: status as Invoice['status'] }
+      // "paid" settles in full; leaving "paid" (mistake/test) restores paid
+      // to the recorded payments so the balance comes back.
+      const recordedPayments = payments
+        .filter(p => p.invoiceId === inv.id)
+        .reduce((s, p) => s + (p.amount ?? 0), 0)
+      patch.paid = resolvePaidOnStatusChange(status, inv.total ?? 0, recordedPayments)
+      await updateInvoice(inv.id!, patch)
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    }
+  }
+
+  // Deleting a payment must undo its effect on the invoice's paid amount.
+  const removePayment = async (pay: Payment) => {
+    const inv = pay.invoiceId ? invoices.find(i => i.id === pay.invoiceId) : undefined
+    await removePay(pay.id!)
+    if (inv) await updateInvoice(inv.id!, { paid: Math.max(0, (inv.paid ?? 0) - (pay.amount ?? 0)) })
+  }
+
+  const handleDelete = async (label: string, doDelete: () => Promise<void>) => {
+    if (!confirm(`Delete this ${label}?`)) return
+    try {
+      setActionError(null)
+      await doDelete()
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    }
   }
 
   const errorForTab = tab === 'invoices' ? invErr : tab === 'quotes' ? quoErr : tab === 'purchase_orders' ? poErr : payErr
@@ -82,13 +130,14 @@ export function FinanceModule() {
         </Button>
       </div>
       {errorForTab && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{errorForTab}</div>}
+      {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
 
       {tab === 'invoices' && (
         <Card padding={false}>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead><tr>
-                {['Number','Customer','Subtotal','Tax','Total','Paid','Balance','Issue Date','Due Date','Status'].map(h => <th key={h} className="th">{h}</th>)}
+                {['Number','Customer','Subtotal','Tax','Total','Paid','Balance','Issue Date','Due Date','Status',''].map(h => <th key={h} className="th">{h}</th>)}
               </tr></thead>
               <tbody>
                 {invoices.map(inv => (
@@ -102,7 +151,23 @@ export function FinanceModule() {
                     <td className={`td font-bold ${(inv.balance ?? 0) > 0 ? 'text-amber-600' : 'text-green-600'}`}>{fmt(inv.balance)}</td>
                     <td className="td text-xs text-slate-500">{inv.issueDate}</td>
                     <td className="td text-xs text-slate-500">{inv.dueDate}</td>
-                    <td className="td"><Badge status={inv.status} /></td>
+                    <td className="td">
+                      <select
+                        value={inv.status}
+                        onChange={e => changeStatus(inv, e.target.value)}
+                        onClick={e => e.stopPropagation()}
+                        className={`text-xs font-semibold rounded-full border-0 px-2 py-1 cursor-pointer focus:outline-none ${INVOICE_STATUS_COLOR[inv.status] ?? 'bg-slate-100 text-slate-600'}`}
+                        title="Change status"
+                      >
+                        {INVOICE_STATUSES.map(s => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
+                      </select>
+                    </td>
+                    <td className="td whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                      <div className="flex gap-1">
+                        <button onClick={() => editInv(inv)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => handleDelete('invoice', async () => { await removeInv(inv.id!); if (selInv?.id === inv.id) setSelInv(null) })} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -116,7 +181,7 @@ export function FinanceModule() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead><tr>
-                {['Number','Customer','Items','Subtotal','Tax','Total','Valid Until','Status'].map(h => <th key={h} className="th">{h}</th>)}
+                {['Number','Customer','Items','Subtotal','Tax','Total','Valid Until','Status',''].map(h => <th key={h} className="th">{h}</th>)}
               </tr></thead>
               <tbody>
                 {quotes.map(q => (
@@ -129,6 +194,12 @@ export function FinanceModule() {
                     <td className="td font-bold text-green-600">{fmt(q.total)}</td>
                     <td className="td text-xs text-slate-500">{q.validUntil}</td>
                     <td className="td"><Badge status={q.status} /></td>
+                    <td className="td whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                      <div className="flex gap-1">
+                        <button onClick={() => editQuo(q)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => handleDelete('quote', () => removeQuo(q.id!))} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -142,7 +213,7 @@ export function FinanceModule() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead><tr>
-                {['Number','Vendor','Items','Total','Order Date','Expected Delivery','Status'].map(h => <th key={h} className="th">{h}</th>)}
+                {['Number','Vendor','Items','Total','Order Date','Expected Delivery','Status',''].map(h => <th key={h} className="th">{h}</th>)}
               </tr></thead>
               <tbody>
                 {pos.map(po => (
@@ -154,6 +225,12 @@ export function FinanceModule() {
                     <td className="td text-xs text-slate-500">{po.orderDate}</td>
                     <td className="td text-xs text-slate-500">{po.expectedDelivery}</td>
                     <td className="td"><Badge status={po.status} /></td>
+                    <td className="td whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                      <div className="flex gap-1">
+                        <button onClick={() => editPo(po)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => handleDelete('PO', () => removePo(po.id!))} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -167,7 +244,7 @@ export function FinanceModule() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead><tr>
-                {['Date','Invoice','Customer','Amount','Method','Reference'].map(h => <th key={h} className="th">{h}</th>)}
+                {['Date','Invoice','Customer','Amount','Method','Reference',''].map(h => <th key={h} className="th">{h}</th>)}
               </tr></thead>
               <tbody>
                 {payments.map(pay => (
@@ -178,6 +255,12 @@ export function FinanceModule() {
                     <td className="td font-bold text-green-600">{fmt(pay.amount)}</td>
                     <td className="td capitalize text-xs"><Badge status="sent">{pay.method?.replace('_',' ')}</Badge></td>
                     <td className="td font-mono text-xs text-slate-400">{pay.reference}</td>
+                    <td className="td whitespace-nowrap" onClick={e => e.stopPropagation()}>
+                      <div className="flex gap-1">
+                        <button onClick={() => editPay(pay)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => handleDelete('payment', () => removePayment(pay))} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>

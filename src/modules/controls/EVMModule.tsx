@@ -3,8 +3,11 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine
 } from 'recharts'
+import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
-import { useEntity } from '@/lib/hooks/useEntity'
+import { Button } from '@/components/ui/Button'
+import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
+import { deriveEVM } from '@/lib/evm'
 import { TABLES } from '@/lib/api/entityConfigs'
 import type { EVMMetrics } from '@/types'
 import { clsx } from 'clsx'
@@ -48,8 +51,31 @@ function EVMRow({ label, value, subtitle, highlight }: { label: string; value: s
 }
 
 export function EVMModule() {
-  const { data: evmList, loading, error } = useEntity<EVMMetrics>(TABLES.evmMetrics)
+  const { data: evmList, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<EVMMetrics>(
+    TABLES.evmMetrics, 'EVM Record', undefined, undefined,
+    // Only BAC/PV/EV/AC (and percentComplete) are entered in the form;
+    // the rest of the EVM metrics are derived before the row is saved.
+    (values) => {
+      const { cpi, spi, sv, cv, eac, etc, vac, tcpi } = deriveEVM(
+        Number(values.bac) || 0, Number(values.pv) || 0,
+        Number(values.ev) || 0, Number(values.ac) || 0,
+      )
+      return { ...values, cpi, spi, sv, cv, eac, etc, vac, tcpi }
+    }
+  )
   const [selected, setSelected] = useState<EVMMetrics | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const handleDelete = async (e: EVMMetrics) => {
+    if (!confirm('Delete this EVM record?')) return
+    try {
+      setActionError(null)
+      await remove(e.id!)
+      if (selected?.projectId === e.projectId) setSelected(null)
+    } catch (err: any) {
+      setActionError(err.message ?? String(err))
+    }
+  }
 
   useEffect(() => {
     if (evmList.length === 0) return
@@ -63,20 +89,17 @@ export function EVMModule() {
 
   if (loading) return <p className="text-xs text-slate-500">Loading…</p>
   if (error) return <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{error}</div>
-  if (!selected) return <p className="text-sm text-slate-500">No EVM data yet. Add rows to the evm_metrics table (via a module, or the Supabase dashboard) to see cost/schedule performance here.</p>
 
-  const trendData = (selected.history ?? []).map(h => ({
-    date: h.date,
-    PV: (h.pv ?? 0) / 1e6,
-    EV: (h.ev ?? 0) / 1e6,
-    AC: (h.ac ?? 0) / 1e6,
-  }))
+  // Charts fall back to the current snapshot when no history series exists,
+  // so a fresh record still renders the S-curve and variance charts.
+  const history = selected?.history ?? []
+  const trendData = history.length > 0
+    ? history.map(h => ({ date: h.date, PV: (h.pv ?? 0) / 1e6, EV: (h.ev ?? 0) / 1e6, AC: (h.ac ?? 0) / 1e6 }))
+    : [{ date: selected?.dataDate ?? 'now', PV: (selected?.pv ?? 0) / 1e6, EV: (selected?.ev ?? 0) / 1e6, AC: (selected?.ac ?? 0) / 1e6 }]
 
-  const varianceData = (selected.history ?? []).map(h => ({
-    date: h.date,
-    SV: (((h.ev ?? 0) - (h.pv ?? 0)) / 1e6),
-    CV: (((h.ev ?? 0) - (h.ac ?? 0)) / 1e6),
-  }))
+  const varianceData = history.length > 0
+    ? history.map(h => ({ date: h.date, SV: ((h.ev ?? 0) - (h.pv ?? 0)) / 1e6, CV: ((h.ev ?? 0) - (h.ac ?? 0)) / 1e6 }))
+    : [{ date: selected?.dataDate ?? 'now', SV: ((selected?.ev ?? 0) - (selected?.pv ?? 0)) / 1e6, CV: ((selected?.ev ?? 0) - (selected?.ac ?? 0)) / 1e6 }]
 
   const summaryData = evmList.map(e => ({
     name: (e.projectName ?? '').split(' ').slice(0, 3).join(' '),
@@ -86,6 +109,19 @@ export function EVMModule() {
 
   return (
     <div className="space-y-6">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm text-slate-500">Enter BAC / PV / EV / AC — CPI, SPI, SV, CV, EAC, ETC, VAC, TCPI are computed automatically.</p>
+        </div>
+        <Button icon={<Plus className="w-4 h-4" />} onClick={openCreate}>New EVM Record</Button>
+      </div>
+      {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
+
+      {!selected ? (
+        <p className="text-sm text-slate-500">No EVM data yet — click “New EVM Record” to add the first cost/schedule snapshot.</p>
+      ) : (
+        <>
       {/* Project selector */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {evmList.map(e => (
@@ -93,7 +129,13 @@ export function EVMModule() {
             onClick={() => setSelected(e)}
             className={clsx('p-4 border-2 transition-all', selected.projectId === e.projectId
               ? 'border-brand-500 shadow-md' : 'border-transparent')}>
-            <p className="text-xs font-bold text-brand-600 dark:text-brand-400 mb-1">{e.customerName}</p>
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-xs font-bold text-brand-600 dark:text-brand-400">{e.customerName}</p>
+              <div className="flex gap-1 flex-shrink-0" onClick={ev => ev.stopPropagation()}>
+                <button onClick={() => openEdit(e)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
+                <button onClick={() => handleDelete(e)} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+              </div>
+            </div>
             <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-3">{e.projectName}</p>
             <div className="grid grid-cols-3 gap-2 text-center">
               <div>
@@ -233,6 +275,9 @@ export function EVMModule() {
           </Card>
         </div>
       </div>
+        </>
+      )}
+      {modal}
     </div>
   )
 }

@@ -11,6 +11,16 @@ import type { Site, SiteStatus, Technology } from '@/types'
 const ALL_STATUSES: SiteStatus[] = ['planned','survey','installation','integration','atp','acceptance','live','decommissioned']
 const ALL_TECHS: Technology[] = ['2G','3G','4G','4G+','5G','MW','VSAT']
 
+const fmt = (n: number | null | undefined) => {
+  const v = n ?? 0
+  return v >= 1e6 ? `${(v/1e6).toFixed(1)}M Ar` : `${v.toLocaleString()} Ar`
+}
+
+const fmtKm = (n: number | null | undefined) => {
+  const v = n ?? 0
+  return v > 0 ? `${v.toLocaleString()} km` : '—'
+}
+
 type ViewMode = 'table' | 'grid'
 
 export function SitesModule() {
@@ -25,8 +35,7 @@ export function SitesModule() {
 
   const filtered = useMemo(() => sites.filter(s => {
     const matchSearch = (s.siteId ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      (s.name ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      (s.customerName ?? '').toLowerCase().includes(search.toLowerCase())
+      (s.name ?? '').toLowerCase().includes(search.toLowerCase())
     const matchStatus = filterStatus === 'all' || s.status === filterStatus
     const matchTech   = filterTech === 'all' || (s.technology ?? []).includes(filterTech as Technology)
     const matchRegion = filterRegion === 'all' || s.region === filterRegion
@@ -74,7 +83,7 @@ export function SitesModule() {
         <div className="relative flex-1 max-w-xs">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input value={search} onChange={e => setSearch(e.target.value)}
-            placeholder="Site ID, name, customer…" className="input pl-9 w-full" />
+            placeholder="Site ID, name…" className="input pl-9 w-full" />
         </div>
         <select value={filterTech} onChange={e => setFilterTech(e.target.value)} className="select w-32">
           <option value="all">All Tech</option>
@@ -102,14 +111,13 @@ export function SitesModule() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead><tr>
-                {['Site ID','Name','Customer','Region','Technology','Status','Priority','Tower','Power','Coordinates',''].map(h => <th key={h} className="th">{h}</th>)}
+                {['Site ID','Name','Region','Technology','Status','Priority','Tower','Power','Distance','Revenue','Coordinates',''].map(h => <th key={h} className="th">{h}</th>)}
               </tr></thead>
               <tbody>
                 {filtered.map(s => (
                   <tr key={s.id} className="tr-hover cursor-pointer" onClick={() => setSelected(s)}>
                     <td className="td font-mono text-xs font-bold text-brand-600 dark:text-brand-400 whitespace-nowrap">{s.siteId}</td>
                     <td className="td font-semibold whitespace-nowrap">{s.name}</td>
-                    <td className="td text-slate-500 whitespace-nowrap">{s.customerName}</td>
                     <td className="td whitespace-nowrap">
                       <div className="flex items-center gap-1">
                         <MapPin className="w-3 h-3 text-slate-400" />
@@ -125,6 +133,8 @@ export function SitesModule() {
                     <td className="td"><Badge status={s.priority} /></td>
                     <td className="td text-xs capitalize text-slate-500">{s.towerType?.replace('_',' ')}</td>
                     <td className="td text-xs capitalize text-slate-500">{s.powerSource}</td>
+                    <td className="td text-xs text-slate-500 whitespace-nowrap">{fmtKm(s.distanceKm)}</td>
+                    <td className="td text-xs font-semibold text-green-600 whitespace-nowrap">{fmt(s.revenue)}</td>
                     <td className="td font-mono text-xs text-slate-400 whitespace-nowrap">
                       {s.latitude?.toFixed?.(4)}, {s.longitude?.toFixed?.(4)}
                     </td>
@@ -154,14 +164,16 @@ export function SitesModule() {
               <div className="flex items-center gap-1 text-xs text-slate-500 mb-2">
                 <MapPin className="w-3 h-3" />{s.region} · {s.latitude?.toFixed?.(3)}, {s.longitude?.toFixed?.(3)}
               </div>
-              <p className="text-xs text-slate-500 mb-3">{s.customerName}</p>
+              <p className="text-xs text-slate-500 mb-2">{s.region}</p>
               <div className="flex flex-wrap gap-1 mb-3">
                 {(s.technology ?? []).map(t => <Badge key={t} status={t}>{t}</Badge>)}
               </div>
-              <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100 dark:border-slate-700 text-xs">
+              <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100 dark:border-slate-700 text-xs">
                 <div><p className="text-slate-400">Tower</p><p className="font-semibold capitalize text-slate-700 dark:text-slate-300">{s.towerType?.replace('_',' ')}</p></div>
                 <div><p className="text-slate-400">Power</p><p className="font-semibold capitalize text-slate-700 dark:text-slate-300">{s.powerSource}</p></div>
                 <div><p className="text-slate-400">Priority</p><Badge status={s.priority} /></div>
+                <div><p className="text-slate-400">Distance</p><p className="font-semibold text-slate-700 dark:text-slate-300">{fmtKm(s.distanceKm)}</p></div>
+                <div><p className="text-slate-400">Revenue</p><p className="font-semibold text-green-600">{fmt(s.revenue)}</p></div>
               </div>
             </Card>
           ))}
@@ -181,7 +193,6 @@ export function SitesModule() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
                 { l: 'Site ID',   v: selected.siteId },
-                { l: 'Customer',  v: selected.customerName },
                 { l: 'Region',    v: selected.region },
                 { l: 'Status',    v: <Badge status={selected.status} /> },
                 { l: 'Latitude',  v: selected.latitude?.toFixed?.(6) },
@@ -191,6 +202,8 @@ export function SitesModule() {
                 { l: 'Tower Type',    v: selected.towerType?.replace('_',' ') },
                 { l: 'Power Source',  v: selected.powerSource },
                 { l: 'Access',        v: selected.accessType },
+                { l: 'Distance',      v: fmtKm(selected.distanceKm) },
+                { l: 'Revenue',       v: fmt(selected.revenue) },
                 { l: 'Last Updated',  v: selected.updatedAt },
               ].map(item => (
                 <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">

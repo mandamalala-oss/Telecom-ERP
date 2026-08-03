@@ -51,15 +51,14 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   const [error, setError] = useState<string | null>(null)
   const [lookupOptions, setLookupOptions] = useState<Record<string, any[]>>({})
 
-  // Re-seed values whenever the modal opens for a (different) record. Only
-  // reseed on open transitions — never on close — so reopening the same
-  // record right after a save picks up the fresh `initial` from the parent.
-  const key = open ? (initial?.id ?? 'new') : 'closed'
-  const [lastKey, setLastKey] = useState(key)
-  if (open && key !== lastKey) {
-    setLastKey(key)
-    setValues(buildInitial(fields, initial))
-  }
+  // Re-seed values every time the modal OPENS, from the current `initial`:
+  // New always starts blank and a reopened record shows the latest saved
+  // values. (The previous key-comparison only reseeded when the record
+  // changed, so cancel→reopen of the same create/edit kept stale input.)
+  useEffect(() => {
+    if (open) setValues(buildInitial(fields, initial))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   // Load reference options for every lookup field, once per open.
   useEffect(() => {

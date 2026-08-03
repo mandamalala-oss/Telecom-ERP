@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { Plus, Search, Trash2, Pencil } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
+import { useEntity } from '@/lib/hooks/useEntity'
 import { TABLES } from '@/lib/api/entityConfigs'
-import type { Company, Contact } from '@/types'
+import type { Company, Contact, Invoice } from '@/types'
 
 const fmt = (n: number) => n >= 1e6 ? `${(n/1e6).toFixed(0)}M Ar` : `${n.toLocaleString()} Ar`
 
@@ -24,9 +25,26 @@ export function CustomersModule() {
   const [tab, setTab] = useState<Tab>('companies')
   const { data: allCompanies, error: coErr, openCreate: newCo, openEdit: editCo, remove: removeCo, modal: coModal } = useEntityCrud<Company>(TABLES.companies, 'Company')
   const { data: allContacts, error: ctErr, openCreate: newCt, openEdit: editCt, remove: removeCt, modal: ctModal } = useEntityCrud<Contact>(TABLES.contacts, 'Contact')
+  const { data: invoices } = useEntity<Invoice>(TABLES.invoices)
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Company | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Customer revenue is derived from real invoice rows (paid / balance),
+  // never stored on the company record — a company has many projects over
+  // time, so a single revenue column on companies cannot be maintained.
+  const finByCustomer = useMemo(() => {
+    const m = new Map<string, { invoiced: number; paid: number; balance: number }>()
+    for (const inv of invoices) {
+      if (!inv.customerId || inv.status === 'cancelled') continue
+      const cur = m.get(inv.customerId) ?? { invoiced: 0, paid: 0, balance: 0 }
+      cur.invoiced += inv.total ?? 0
+      cur.paid += inv.paid ?? 0
+      cur.balance += inv.balance ?? 0
+      m.set(inv.customerId, cur)
+    }
+    return m
+  }, [invoices])
 
   const companies = allCompanies.filter(c =>
     (c.name??'').toLowerCase().includes(search.toLowerCase()) ||
@@ -91,30 +109,33 @@ export function CustomersModule() {
 
       {tab === 'companies' && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {companies.map(co => (
-            <Card key={co.id} hover padding={false} onClick={() => setSelected(co)} className="p-5">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="w-10 h-10 rounded-lg bg-brand-50 dark:bg-brand-900/30 flex items-center justify-center text-brand-600 font-bold text-sm flex-shrink-0">
-                  {co.name.slice(0,2).toUpperCase()}
-                </div>
-                <Badge status={co.status} className="flex-shrink-0" />
-              </div>
-              <h3 className="font-bold text-slate-900 dark:text-white">{co.name}</h3>
-              <p className="text-xs text-slate-500 mt-0.5">{COMPANY_TYPE_LABEL[co.type]}</p>
-              <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
-                <div>
-                  <p className="text-xs text-slate-400">Location</p>
-                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">{co.city}, {co.country}</p>
-                </div>
-                {(co.revenue ?? 0) > 0 && (
-                  <div>
-                    <p className="text-xs text-slate-400">Contract Value</p>
-                    <p className="text-xs font-semibold text-green-600">{fmt(co.revenue)}</p>
+          {companies.map(co => {
+            const fin = finByCustomer.get(co.id)
+            return (
+              <Card key={co.id} hover padding={false} onClick={() => setSelected(co)} className="p-5">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div className="w-10 h-10 rounded-lg bg-brand-50 dark:bg-brand-900/30 flex items-center justify-center text-brand-600 font-bold text-sm flex-shrink-0">
+                    {co.name.slice(0,2).toUpperCase()}
                   </div>
-                )}
-              </div>
-            </Card>
-          ))}
+                  <Badge status={co.status} className="flex-shrink-0" />
+                </div>
+                <h3 className="font-bold text-slate-900 dark:text-white">{co.name}</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{COMPANY_TYPE_LABEL[co.type]}</p>
+                <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
+                  <div>
+                    <p className="text-xs text-slate-400">Location</p>
+                    <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">{co.city}, {co.country}</p>
+                  </div>
+                  {(fin?.paid ?? 0) > 0 && (
+                    <div>
+                      <p className="text-xs text-slate-400">Revenue (paid)</p>
+                      <p className="text-xs font-semibold text-green-600">{fmt(fin?.paid ?? 0)}</p>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            )
+          })}
         </div>
       )}
 
@@ -174,6 +195,30 @@ export function CustomersModule() {
                   <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{item.v}</p>
                 </div>
               ))}
+            </div>
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Revenue & Invoices</p>
+              {(() => {
+                const fin = finByCustomer.get(selected.id)
+                const invs = invoices.filter(i => i.customerId === selected.id && i.status !== 'cancelled')
+                return (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {[
+                        { l: 'Total Invoiced', v: fmt(fin?.invoiced ?? 0) },
+                        { l: 'Total Paid',     v: fmt(fin?.paid ?? 0) },
+                        { l: 'Open Balance',   v: fmt(fin?.balance ?? 0) },
+                      ].map(item => (
+                        <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                          <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{item.l}</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{item.v}</p>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-slate-400 mt-2">{invs.length} invoice{invs.length !== 1 ? 's' : ''} — revenue is computed from invoices/payments, not stored on the company.</p>
+                  </>
+                )
+              })()}
             </div>
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Contacts</p>
