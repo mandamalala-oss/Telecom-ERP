@@ -33,7 +33,7 @@ begin
   for g in
     select name, customer_name, count(*) as cnt
     from projects
-    group by name, coalesce(customer_name, '')
+    group by name, customer_name
     having count(*) > 1
   loop
     select id into surv
@@ -75,12 +75,12 @@ begin
       update purchase_requests    set project_id = surv where project_id = d;
       update employees            set current_project_id = surv where current_project_id = d;
       update vehicles             set current_project_id = surv where current_project_id = d;
-      update documents
+      update contracts
       set linked_project_ids = (
-        select array_agg(case when x = d then surv else x end)
+        select array_agg(case when x = d::text then surv::text else x end)
         from unnest(linked_project_ids) x
       )
-      where linked_project_ids && array[d];
+      where linked_project_ids && array[d::text];
 
       -- financials: sum into the survivor (the duplicates were split per site)
       update projects set
