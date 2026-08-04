@@ -88,7 +88,7 @@ alter table public.sites enable row level security;
 drop policy if exists "sites_read" on public.sites;
 create policy "sites_read" on public.sites for select using (public.app_role() is not null);
 drop policy if exists "sites_write" on public.sites;
-create policy "sites_write" on public.sites for insert/update/delete
+create policy "sites_write" on public.sites for all
   using (public.app_has_role(array['admin','pm','engineer']))
   with check (public.app_has_role(array['admin','pm','engineer']));
 
@@ -96,7 +96,7 @@ alter table public.projects enable row level security;
 drop policy if exists "projects_read" on public.projects;
 create policy "projects_read" on public.projects for select using (public.app_role() is not null);
 drop policy if exists "projects_write" on public.projects;
-create policy "projects_write" on public.projects for insert/update/delete
+create policy "projects_write" on public.projects for all
   using (public.app_has_role(array['admin','pm','engineer']))
   with check (public.app_has_role(array['admin','pm','engineer']));
 
@@ -104,7 +104,7 @@ alter table public.project_sites enable row level security;
 drop policy if exists "project_sites_read" on public.project_sites;
 create policy "project_sites_read" on public.project_sites for select using (public.app_role() is not null);
 drop policy if exists "project_sites_write" on public.project_sites;
-create policy "project_sites_write" on public.project_sites for insert/update/delete
+create policy "project_sites_write" on public.project_sites for all
   using (public.app_has_role(array['admin','pm','engineer']))
   with check (public.app_has_role(array['admin','pm','engineer']));
 
@@ -112,7 +112,7 @@ alter table public.tasks enable row level security;
 drop policy if exists "tasks_read" on public.tasks;
 create policy "tasks_read" on public.tasks for select using (public.app_has_role(array['admin','pm','engineer']));
 drop policy if exists "tasks_write" on public.tasks;
-create policy "tasks_write" on public.tasks for insert/update/delete
+create policy "tasks_write" on public.tasks for all
   using (public.app_has_role(array['admin','pm','engineer']))
   with check (public.app_has_role(array['admin','pm','engineer']));
 
@@ -121,7 +121,7 @@ alter table public.evm_metrics enable row level security;
 drop policy if exists "evm_metrics_read" on public.evm_metrics;
 create policy "evm_metrics_read" on public.evm_metrics for select using (public.app_has_role(array['admin','pm','finance']));
 drop policy if exists "evm_metrics_write" on public.evm_metrics;
-create policy "evm_metrics_write" on public.evm_metrics for insert/update/delete
+create policy "evm_metrics_write" on public.evm_metrics for all
   using (public.app_has_role(array['admin','pm','finance']))
   with check (public.app_has_role(array['admin','pm','finance']));
 
@@ -129,7 +129,7 @@ alter table public.companies enable row level security;
 drop policy if exists "companies_read" on public.companies;
 create policy "companies_read" on public.companies for select using (public.app_has_role(array['admin','pm','finance']));
 drop policy if exists "companies_write" on public.companies;
-create policy "companies_write" on public.companies for insert/update/delete
+create policy "companies_write" on public.companies for all
   using (public.app_has_role(array['admin','pm','finance']))
   with check (public.app_has_role(array['admin','pm','finance']));
 
@@ -137,7 +137,7 @@ alter table public.contacts enable row level security;
 drop policy if exists "contacts_read" on public.contacts;
 create policy "contacts_read" on public.contacts for select using (public.app_has_role(array['admin','pm','finance']));
 drop policy if exists "contacts_write" on public.contacts;
-create policy "contacts_write" on public.contacts for insert/update/delete
+create policy "contacts_write" on public.contacts for all
   using (public.app_has_role(array['admin','pm','finance']))
   with check (public.app_has_role(array['admin','pm','finance']));
 
@@ -145,7 +145,7 @@ alter table public.invoices enable row level security;
 drop policy if exists "invoices_read" on public.invoices;
 create policy "invoices_read" on public.invoices for select using (public.app_has_role(array['admin','pm','finance']));
 drop policy if exists "invoices_write" on public.invoices;
-create policy "invoices_write" on public.invoices for insert/update/delete
+create policy "invoices_write" on public.invoices for all
   using (public.app_has_role(array['admin','pm','finance']))
   with check (public.app_has_role(array['admin','pm','finance']));
 
@@ -153,7 +153,7 @@ alter table public.payments enable row level security;
 drop policy if exists "payments_read" on public.payments;
 create policy "payments_read" on public.payments for select using (public.app_has_role(array['admin','pm','finance']));
 drop policy if exists "payments_write" on public.payments;
-create policy "payments_write" on public.payments for insert/update/delete
+create policy "payments_write" on public.payments for all
   using (public.app_has_role(array['admin','pm','finance']))
   with check (public.app_has_role(array['admin','pm','finance']));
 

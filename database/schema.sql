@@ -722,28 +722,28 @@ create policy "users_write_admin" on public.users
 alter table public.sites enable row level security;
 drop policy if exists "allow_all_sites" on public.sites;
 create policy "sites_read" on public.sites for select using (public.app_role() is not null);
-create policy "sites_write" on public.sites for insert/update/delete
+create policy "sites_write" on public.sites for all
   using (public.app_has_role(array['admin','pm','engineer']))
   with check (public.app_has_role(array['admin','pm','engineer']));
 
 alter table public.projects enable row level security;
 drop policy if exists "allow_all_projects" on public.projects;
 create policy "projects_read" on public.projects for select using (public.app_role() is not null);
-create policy "projects_write" on public.projects for insert/update/delete
+create policy "projects_write" on public.projects for all
   using (public.app_has_role(array['admin','pm','engineer']))
   with check (public.app_has_role(array['admin','pm','engineer']));
 
 alter table public.project_sites enable row level security;
 drop policy if exists "allow_all_project_sites" on public.project_sites;
 create policy "project_sites_read" on public.project_sites for select using (public.app_role() is not null);
-create policy "project_sites_write" on public.project_sites for insert/update/delete
+create policy "project_sites_write" on public.project_sites for all
   using (public.app_has_role(array['admin','pm','engineer']))
   with check (public.app_has_role(array['admin','pm','engineer']));
 
 alter table public.tasks enable row level security;
 drop policy if exists "allow_all_tasks" on public.tasks;
 create policy "tasks_read" on public.tasks for select using (public.app_has_role(array['admin','pm','engineer']));
-create policy "tasks_write" on public.tasks for insert/update/delete
+create policy "tasks_write" on public.tasks for all
   using (public.app_has_role(array['admin','pm','engineer']))
   with check (public.app_has_role(array['admin','pm','engineer']));
 
@@ -751,35 +751,35 @@ create policy "tasks_write" on public.tasks for insert/update/delete
 alter table public.evm_metrics enable row level security;
 drop policy if exists "allow_all_evm_metrics" on public.evm_metrics;
 create policy "evm_metrics_read" on public.evm_metrics for select using (public.app_has_role(array['admin','pm','finance']));
-create policy "evm_metrics_write" on public.evm_metrics for insert/update/delete
+create policy "evm_metrics_write" on public.evm_metrics for all
   using (public.app_has_role(array['admin','pm','finance']))
   with check (public.app_has_role(array['admin','pm','finance']));
 
 alter table public.companies enable row level security;
 drop policy if exists "allow_all_companies" on public.companies;
 create policy "companies_read" on public.companies for select using (public.app_has_role(array['admin','pm','finance']));
-create policy "companies_write" on public.companies for insert/update/delete
+create policy "companies_write" on public.companies for all
   using (public.app_has_role(array['admin','pm','finance']))
   with check (public.app_has_role(array['admin','pm','finance']));
 
 alter table public.contacts enable row level security;
 drop policy if exists "allow_all_contacts" on public.contacts;
 create policy "contacts_read" on public.contacts for select using (public.app_has_role(array['admin','pm','finance']));
-create policy "contacts_write" on public.contacts for insert/update/delete
+create policy "contacts_write" on public.contacts for all
   using (public.app_has_role(array['admin','pm','finance']))
   with check (public.app_has_role(array['admin','pm','finance']));
 
 alter table public.invoices enable row level security;
 drop policy if exists "allow_all_invoices" on public.invoices;
 create policy "invoices_read" on public.invoices for select using (public.app_has_role(array['admin','pm','finance']));
-create policy "invoices_write" on public.invoices for insert/update/delete
+create policy "invoices_write" on public.invoices for all
   using (public.app_has_role(array['admin','pm','finance']))
   with check (public.app_has_role(array['admin','pm','finance']));
 
 alter table public.payments enable row level security;
 drop policy if exists "allow_all_payments" on public.payments;
 create policy "payments_read" on public.payments for select using (public.app_has_role(array['admin','pm','finance']));
-create policy "payments_write" on public.payments for insert/update/delete
+create policy "payments_write" on public.payments for all
   using (public.app_has_role(array['admin','pm','finance']))
   with check (public.app_has_role(array['admin','pm','finance']));
 
