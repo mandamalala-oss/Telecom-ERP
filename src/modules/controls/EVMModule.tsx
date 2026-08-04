@@ -10,11 +10,11 @@ import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
 import {
   appendSnapshot, combineEVMRecords, deriveEVM, evFromProgress,
-  groupEVMByProject, mergeHistories, rollupCustomerEVM,
+  groupEVMByProject, mergeHistories, rollupCustomerEVM, wouldLeaveGroupEmpty,
   type EVMSiteRecord,
 } from '@/lib/evm'
 import { TABLES } from '@/lib/api/entityConfigs'
-import type { EVMMetrics, ProjectSite, Site } from '@/types'
+import type { EVMMetrics, Project, ProjectSite, Site } from '@/types'
 import { clsx } from 'clsx'
 
 const fmt  = (n: number | null | undefined) => { const v = n ?? 0; return v >= 1e6 ? `${(v/1e6).toFixed(2)}M Ar` : `${v.toLocaleString()} Ar` }
@@ -94,6 +94,15 @@ function SiteRow({ r, onSnapshot, onEdit, onDelete }: {
 }
 
 export function EVMModule() {
+  const { data: projectSites } = useEntity<ProjectSite>(TABLES.projectSites)
+  const { data: sites } = useEntity<Site>(TABLES.sites)
+  const { data: projects } = useEntity<Project>(TABLES.projects)
+
+  // The EVM form's sitePicker (project name → site) is driven by these rows.
+  const formLookup = useMemo(() => ({
+    projects, project_sites: projectSites, sites,
+  }), [projects, projectSites, sites])
+
   const { data: evmList, loading, error, openCreate, openEdit, remove, update, modal } = useEntityCrud<EVMMetrics>(
     TABLES.evmMetrics, 'EVM Record', undefined, undefined,
     // Only PO/BAC/PV/AC (and percentComplete) are entered in the form; EV is
@@ -106,7 +115,9 @@ export function EVMModule() {
         bac, Number(values.pv) || 0, ev, Number(values.ac) || 0,
       )
       return { ...values, ev, cpi, spi, sv, cv, eac, etc, vac, tcpi }
-    }
+    },
+    undefined,
+    formLookup
   )
   const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
   const [hiddenSiteIds, setHiddenSiteIds] = useState<Set<string>>(new Set())
@@ -114,8 +125,6 @@ export function EVMModule() {
   const [snapshotMsg, setSnapshotMsg] = useState<string | null>(null)
 
   // 1 project = 1 site (project_sites junction); resolve the site per project.
-  const { data: projectSites } = useEntity<ProjectSite>(TABLES.projectSites)
-  const { data: sites } = useEntity<Site>(TABLES.sites)
   const sitesByProject = useMemo(() => {
     const siteById = new Map(sites.map(s => [s.id, s]))
     const map = new Map<string, Site[]>()
@@ -172,6 +181,10 @@ export function EVMModule() {
 
   const toggleSite = (recordId: string) => {
     setHiddenSiteIds(prev => {
+      // At least one site per group must stay visible — unchecking the last
+      // checked site of a group is ignored.
+      const group = groups.find(g => g.records.some(r => r.recordId === recordId))
+      if (group && !prev.has(recordId) && wouldLeaveGroupEmpty(prev, group.records, recordId)) return prev
       const next = new Set(prev)
       if (next.has(recordId)) next.delete(recordId); else next.add(recordId)
       return next
@@ -196,7 +209,10 @@ export function EVMModule() {
 
   const handleEdit = (r: EVMSiteRecord) => {
     const row = evmList.find(e => e.id === r.recordId)
-    if (row) openEdit(row)
+    if (!row) return
+    // Pre-select the site in the form's sitePicker (1 project = 1 site).
+    const site = (sitesByProject.get(row.projectId ?? '') ?? [])[0]
+    openEdit({ ...row, siteId: site?.id ?? '' } as EVMMetrics)
   }
 
   const handleDelete = async (r: EVMSiteRecord) => {
@@ -269,8 +285,15 @@ export function EVMModule() {
               {/* Site filter — per-site checkboxes, default all checked */}
               <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-2" onClick={ev => ev.stopPropagation()}>
                 {g.records.map(r => (
-                  <label key={r.recordId} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
-                    <input type="checkbox" checked={!hiddenSiteIds.has(r.recordId)} onChange={() => toggleSite(r.recordId)} />
+                  <label key={r.recordId}
+                    className={clsx('flex items-center gap-1.5 text-xs cursor-pointer',
+                      hiddenSiteIds.has(r.recordId) ? 'text-slate-400 line-through' : 'text-slate-600 dark:text-slate-300')}>
+                    <input
+                      type="checkbox"
+                      checked={!hiddenSiteIds.has(r.recordId)}
+                      disabled={!hiddenSiteIds.has(r.recordId) && wouldLeaveGroupEmpty(hiddenSiteIds, g.records, r.recordId)}
+                      onChange={() => toggleSite(r.recordId)}
+                    />
                     <span className="font-mono">{r.siteKey}</span>
                   </label>
                 ))}

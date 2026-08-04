@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { makeApi } from '@/lib/api/crud'
 import { buildPayload } from '@/lib/formPayload'
 
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect'
+export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect' | 'sitePicker'
 
 export interface LookupConfig {
   /** Table to load options from (TABLES value, e.g. 'sites'). */
@@ -35,6 +35,10 @@ export interface FieldConfig {
    * to a junction table via onCreated/onUpdated.
    */
   virtual?: boolean
+  /** sitePicker: name of the field holding the chosen project name. */
+  projectNameField?: string
+  /** sitePicker: table (TABLES value) holding the project rows. */
+  projectsTable?: string
   placeholder?: string
   /** Turns the field into a reference dropdown backed by another table. */
   lookup?: LookupConfig
@@ -47,12 +51,14 @@ interface Props {
   fields: FieldConfig[]
   initial?: Record<string, any>
   onSubmit: (values: Record<string, any>) => Promise<void>
+  /** Extra lookup rows supplied by the module (e.g. projects/sites/junction) — merged over auto-fetched options. */
+  extraLookup?: Record<string, any[]>
 }
 
 // One generic, config-driven form used to create/edit records for every
 // module — keeps every entity's Create/Edit UX consistent and avoids
 // bespoke forms per module while still covering its real fields.
-export function EntityFormModal({ open, onClose, title, fields, initial, onSubmit }: Props) {
+export function EntityFormModal({ open, onClose, title, fields, initial, onSubmit, extraLookup }: Props) {
   const [values, setValues] = useState<Record<string, any>>(() => buildInitial(fields, initial))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -90,15 +96,59 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
 
   const set = (k: string, v: any) => setValues((prev) => ({ ...prev, [k]: v }))
 
+  // Module-supplied rows (projects, sites, project_sites…) take precedence
+  // over the auto-fetched lookup options.
+  const allOptions: Record<string, any[]> = { ...lookupOptions, ...(extraLookup ?? {}) }
+
   const handleLookupChange = (f: FieldConfig, value: string) => {
     set(f.key, value)
     const lookup = f.lookup
     if (!lookup?.populate) return
-    const row = (lookupOptions[lookup.table] ?? []).find((r) => r[lookup.valueKey] === value)
+    const row = (allOptions[lookup.table] ?? []).find((r) => r[lookup.valueKey] === value)
     if (!row) return
     for (const [formField, rowField] of Object.entries(lookup.populate)) {
       set(formField, row[rowField] ?? '')
     }
+  }
+
+  // sitePicker: choose a project NAME (deduped — one STARLINK), then a site
+  // linked to one of that project's rows; selecting the site pulls the whole
+  // project's data into the form (projectId/name/customer + PO/BAC/AC).
+  const sitePickerOptions = (f: FieldConfig) => {
+    const projects = allOptions[f.projectsTable ?? 'projects'] ?? []
+    const junction = allOptions['project_sites'] ?? []
+    const projectName = values[f.projectNameField ?? 'projectName'] ?? ''
+    const projectIds = new Set(projects.filter(p => (p.name ?? '') === projectName).map(p => p.id))
+    const siteIds = new Set(junction.filter(ps => projectIds.has(ps.projectId)).map(ps => ps.siteId))
+    const sites = (allOptions[f.lookup!.table] ?? []).filter(s => siteIds.has(s.id))
+    sites.sort((a, b) => String(a[f.lookup!.labelKey] ?? '').localeCompare(String(b[f.lookup!.labelKey] ?? '')))
+    return { projects, sites }
+  }
+
+  const handleSitePickerProject = (f: FieldConfig, projectName: string) => {
+    set(f.projectNameField ?? 'projectName', projectName)
+    // Clear the site + everything the site pull would overwrite, so a changed
+    // project can't leave stale values behind.
+    set(f.key, '')
+    set('projectId', '')
+    for (const k of ['customerName', 'po', 'bac', 'ac']) set(k, '')
+  }
+
+  const handleSitePickerSite = (f: FieldConfig, siteId: string) => {
+    set(f.key, siteId)
+    const { projects } = sitePickerOptions(f)
+    const junction = allOptions['project_sites'] ?? []
+    const name = values[f.projectNameField ?? 'projectName'] ?? ''
+    // The site's project = the row with this name whose junction links the site.
+    const row = projects.find(p =>
+      (p.name ?? '') === name && junction.some(ps => ps.projectId === p.id && ps.siteId === siteId)
+    )
+    if (!row) return
+    set('projectId', row.id ?? '')
+    set('customerName', row.customerName ?? '')
+    set('po', row.revenue ?? '')
+    set('bac', row.budget ?? '')
+    set('ac', row.spent ?? '')
   }
 
   const lookupLabel = (f: FieldConfig, row: Record<string, any>) => {
@@ -164,7 +214,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                 f.lookup ? (
                   <Select label={f.label} value={values[f.key] ?? ''} onChange={(e) => handleLookupChange(f, e.target.value)}>
                     <option value="">Select…</option>
-                    {(lookupOptions[f.lookup.table] ?? []).map((row) => (
+                    {(allOptions[f.lookup.table] ?? []).map((row) => (
                       <option key={row[f.lookup!.valueKey]} value={row[f.lookup!.valueKey]}>{lookupLabel(f, row)}</option>
                     ))}
                   </Select>
@@ -183,11 +233,28 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                   <input type="checkbox" checked={!!values[f.key]} onChange={(e) => set(f.key, e.target.checked)} />
                   {f.label}
                 </label>
+              ) : f.type === 'sitePicker' ? (
+                <div className="space-y-2">
+                  <Select label="Project" value={values[f.projectNameField ?? 'projectName'] ?? ''} onChange={(e) => handleSitePickerProject(f, e.target.value)}>
+                    <option value="">Select project…</option>
+                    {[...new Set((sitePickerOptions(f).projects).map((p: any) => p.name ?? '').filter(Boolean))]
+                      .sort((a, b) => a.localeCompare(b))
+                      .map((name) => (
+                        <option key={name} value={name}>{name}</option>
+                      ))}
+                  </Select>
+                  <Select label="Site" value={values[f.key] ?? ''} onChange={(e) => handleSitePickerSite(f, e.target.value)}>
+                    <option value="">Select site…</option>
+                    {sitePickerOptions(f).sites.map((row: any) => (
+                      <option key={row[f.lookup!.valueKey]} value={row[f.lookup!.valueKey]}>{lookupLabel(f, row)}</option>
+                    ))}
+                  </Select>
+                </div>
               ) : f.type === 'multiSelect' ? (
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-1 max-h-52 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 p-2">
-                    {(lookupOptions[f.lookup!.table] ?? []).map((row) => {
+                    {(allOptions[f.lookup!.table] ?? []).map((row) => {
                       const v = row[f.lookup!.valueKey]
                       const checked = (values[f.key] ?? []).includes(v)
                       return (

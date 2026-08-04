@@ -13,7 +13,8 @@ export function useEntityCrud<T extends { id?: string }>(
   fieldsOverride?: FieldConfig[],
   onCreated?: (row: T, values: Record<string, any>) => Promise<void>,
   transformPayload?: (values: Record<string, any>) => Record<string, any>,
-  onUpdated?: (row: T, values: Record<string, any>) => Promise<void>
+  onUpdated?: (row: T, values: Record<string, any>) => Promise<void>,
+  modalExtraLookup?: Record<string, any[]>
 ) {
   const entity = useEntity<T>(table)
   const [modalOpen, setModalOpen] = useState(false)
@@ -55,6 +56,7 @@ export function useEntityCrud<T extends { id?: string }>(
       fields={fields}
       initial={editing ?? undefined}
       onSubmit={handleSubmit}
+      extraLookup={modalExtraLookup}
     />
   )
 

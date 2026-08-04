@@ -65,6 +65,21 @@ export function appendSnapshot(
   return next.length > maxPoints ? next.slice(next.length - maxPoints) : next
 }
 
+/**
+ * Site-filter guard: returns true if un-hiding/keeping `recordId` visible is
+ * the only visible record left in its group — i.e. unchecking it would leave
+ * the group empty. EVM requires at least one site per group to stay shown.
+ * Pure + unit-tested.
+ */
+export function wouldLeaveGroupEmpty(
+  hiddenIds: Set<string>,
+  groupRecords: EVMSiteRecord[],
+  recordId: string
+): boolean {
+  const visible = groupRecords.filter(r => !hiddenIds.has(r.recordId))
+  return visible.length === 1 && visible[0].recordId === recordId
+}
+
 // ─── Combination / grouping (program-level EVM) ─────────────────────────────
 
 export interface EVMRollupInput {

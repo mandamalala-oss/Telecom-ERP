@@ -16,6 +16,7 @@ vi.mock('@/lib/api/crud', () => ({ makeApi: mocks.makeApi }))
 const siteRows = [
   { id: 's1', siteId: 'MDG-001', name: 'Site Alpha', latitude: -18.9, longitude: 47.5 },
   { id: 's2', siteId: 'MDG-002', name: 'Site Beta', latitude: -19.0, longitude: 47.6 },
+  { id: 's3', siteId: 'MDG-003', name: 'Site Gamma', latitude: -19.5, longitude: 47.8 },
 ]
 
 function renderForm(fields: FieldConfig[], initial?: Record<string, any>) {
@@ -203,5 +204,93 @@ describe('EntityFormModal — multiSelect', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
     expect(onSubmit.mock.calls[0][0]).toMatchObject({ siteIds: ['s2'] })
+  })
+})
+
+describe('EntityFormModal — sitePicker', () => {
+  const projectRows = [
+    { id: 'p1', name: 'STARLINK', customerName: 'Telma', budget: 1_000_000, spent: 320_000, revenue: 2_500_000 },
+    { id: 'p2', name: 'STARLINK', customerName: 'Telma', budget: 2_000_000, spent: 900_000, revenue: 3_500_000 },
+    { id: 'p3', name: 'ORANGE 2026', customerName: 'Orange', budget: 500_000, spent: 100_000, revenue: 800_000 },
+  ]
+  const junctionRows = [
+    { projectId: 'p1', siteId: 's1' },
+    { projectId: 'p2', siteId: 's2' },
+    { projectId: 'p3', siteId: 's3' },
+  ]
+  const pickerField: FieldConfig = {
+    key: 'siteId', label: 'Project & Site', type: 'sitePicker', required: true, virtual: true,
+    projectNameField: 'projectName', projectsTable: 'projects',
+    lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}' },
+  }
+  const fields: FieldConfig[] = [
+    pickerField,
+    { key: 'projectName', label: 'Project Name', type: 'text' },
+    { key: 'po', label: 'PO', type: 'number' },
+    { key: 'bac', label: 'BAC', type: 'number' },
+    { key: 'ac', label: 'AC', type: 'number' },
+  ]
+  const extraLookup = { projects: projectRows, project_sites: junctionRows, sites: siteRows }
+
+  function renderSiteForm(initial?: Record<string, any>) {
+    const onSubmit = vi.fn(async (_values: Record<string, any>) => {})
+    render(
+      <EntityFormModal open onClose={() => {}} title="Test" fields={fields} initial={initial} onSubmit={onSubmit} extraLookup={extraLookup} />
+    )
+    return onSubmit
+  }
+
+  it('shows each project name only once (one STARLINK)', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => siteRows })
+    renderSiteForm()
+    await screen.findByRole('option', { name: 'STARLINK' })
+    const names = screen.getAllByRole('option').map(o => o.textContent)
+    expect(names.filter(t => t === 'STARLINK')).toHaveLength(1)
+    expect(names).toContain('ORANGE 2026')
+  })
+
+  it('lists only the sites of the chosen project', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => siteRows })
+    renderSiteForm()
+    await userEvent.selectOptions(await screen.findByLabelText('Project'), 'STARLINK')
+    const siteSelect = screen.getByLabelText('Site')
+    const siteNames = Array.from(siteSelect.querySelectorAll('option')).map(o => o.textContent)
+    expect(siteNames).toContain('MDG-001 — Site Alpha')
+    expect(siteNames).toContain('MDG-002 — Site Beta')
+    expect(siteNames).not.toContain('MDG-003 — Site Gamma')
+  })
+
+  it('pulls the site’s project data (PO/BAC/AC/name/customer) into the payload', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => siteRows })
+    const onSubmit = renderSiteForm()
+    await userEvent.selectOptions(await screen.findByLabelText('Project'), 'STARLINK')
+    await userEvent.selectOptions(screen.getByLabelText('Site'), 's1')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({
+      siteId: 's1',
+      projectName: 'STARLINK',
+      projectId: 'p1',
+      customerName: 'Telma',
+      po: 2_500_000,
+      bac: 1_000_000,
+      ac: 320_000,
+    })
+  })
+
+  it('blocks submit until a site is chosen (required)', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => siteRows })
+    const onSubmit = renderSiteForm()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Please fill in: Project & Site')).toBeTruthy()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('pre-selects the site from the edit initial', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => siteRows })
+    const onSubmit = renderSiteForm({ projectName: 'STARLINK', siteId: 's2' })
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ siteId: 's2', projectName: 'STARLINK' })
   })
 })

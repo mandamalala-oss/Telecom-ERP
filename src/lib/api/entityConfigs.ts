@@ -206,7 +206,8 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'notes', label: 'Notes', type: 'textarea' },
   ],
   evm_metrics: [
-    { key: 'projectName', label: 'Project', type: 'select', required: true, lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id', po: 'revenue', bac: 'budget', ac: 'spent' } } },
+    { key: 'siteId', label: 'Project & Site', type: 'sitePicker', required: true, virtual: true, projectNameField: 'projectName', projectsTable: 'projects', lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}' } },
+    { key: 'projectName', label: 'Project', type: 'text' },
     { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'dataDate', label: 'Data Date', type: 'date' },
     { key: 'po', label: 'PO from Customer (Ar)', type: 'number' },

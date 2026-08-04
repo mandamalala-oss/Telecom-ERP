@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   appendSnapshot, combineEVMRecords, deriveEVM, evFromProgress,
-  groupEVMByProject, mergeHistories, rollupCustomerEVM,
+  groupEVMByProject, mergeHistories, rollupCustomerEVM, wouldLeaveGroupEmpty,
   type EVMSiteRecord,
 } from '@/lib/evm'
 
@@ -240,5 +240,25 @@ describe('mergeHistories', () => {
 
   it('handles records without history', () => {
     expect(mergeHistories([{ history: undefined }, {}])).toEqual([])
+  })
+})
+
+describe('wouldLeaveGroupEmpty', () => {
+  const recs = [
+    { recordId: 'a' } as unknown as import('@/lib/evm').EVMSiteRecord,
+    { recordId: 'b' } as unknown as import('@/lib/evm').EVMSiteRecord,
+  ]
+
+  it('allows unchecking while another site of the group stays visible', () => {
+    expect(wouldLeaveGroupEmpty(new Set(), recs, 'a')).toBe(false)      // a,b both visible
+    expect(wouldLeaveGroupEmpty(new Set(['b']), recs, 'b')).toBe(false) // b already hidden → re-checking only
+  })
+
+  it('blocks unchecking the last visible site of the group', () => {
+    expect(wouldLeaveGroupEmpty(new Set(['b']), recs, 'a')).toBe(true)  // unchecking a would empty the group
+  })
+
+  it('is irrelevant when the whole group is already hidden', () => {
+    expect(wouldLeaveGroupEmpty(new Set(['a', 'b']), recs, 'a')).toBe(false)
   })
 })
