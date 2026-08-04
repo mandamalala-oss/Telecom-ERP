@@ -111,7 +111,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string): Promise<string | null> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) return error.message
+    // Some error shapes carry no `.message` — fall back to the raw object.
+    if (error) return error.message ?? JSON.stringify(error)
     // Eagerly resolve the profile so the UI updates before the auth event lands.
     const { data } = await supabase.auth.getSession()
     const uid = data.session?.user.id

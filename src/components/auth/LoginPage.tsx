@@ -23,6 +23,9 @@ export function LoginPage() {
       const err = await login(email.trim(), password)
       if (err) setError(err)
       else navigate('/', { replace: true })
+    } catch (e: any) {
+      // Supabase can throw too — surface the real message, not "{}".
+      setError(e?.message ?? JSON.stringify(e))
     } finally {
       setSubmitting(false)
     }
