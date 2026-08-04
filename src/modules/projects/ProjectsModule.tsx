@@ -1,8 +1,9 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import { Plus, Trash2, Pencil } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
+import { Input, Select } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
@@ -95,9 +96,10 @@ export function ProjectsModule() {
   )
   const [selected, setSelected] = useState<Project | null>(null)
   const [filterStatus, setFilterStatus] = useState('all')
+  const [search, setSearch] = useState('')
+  const [filterCustomer, setFilterCustomer] = useState('')
+  const [filterSite, setFilterSite] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
-
-  const filtered = projects.filter(p => filterStatus === 'all' || p.status === filterStatus)
 
   const totalBudget  = projects.reduce((s, p) => s + (p.budget ?? 0), 0)
   const totalSpent   = projects.reduce((s, p) => s + (p.spent ?? 0), 0)
@@ -121,6 +123,34 @@ export function ProjectsModule() {
   }, [projectSites, sites])
   const selSites = selected ? sitesByProject.get(selected.id ?? '') ?? [] : []
   const selFin = projectFinance(selected?.budget, selected?.spent, selected?.revenue)
+
+  // ── Filter bar ─────────────────────────────────────────────────────────────
+  // Search by name, customer_name, site code — AND logic, combined with the
+  // status tabs. Tab labels show the count of results for each status.
+  const customerOptions = useMemo(() =>
+    [...new Set(projects.map(p => p.customerName ?? '').filter(Boolean))].sort((a, b) => a.localeCompare(b)),
+    [projects]
+  )
+  const siteCodeOptions = useMemo(() => {
+    const codes = new Set<string>()
+    for (const list of sitesByProject.values()) for (const s of list) codes.add(s.siteId)
+    return [...codes].sort((a, b) => a.localeCompare(b))
+  }, [sitesByProject])
+
+  const matchesFilters = useCallback((p: Project) => {
+    const q = search.trim().toLowerCase()
+    const nameMatch = !q || (p.name ?? '').toLowerCase().includes(q)
+    const custMatch = !filterCustomer || (p.customerName ?? '') === filterCustomer
+    const siteMatch = !filterSite || (sitesByProject.get(p.id ?? '') ?? []).some(s => s.siteId === filterSite)
+    return nameMatch && custMatch && siteMatch
+  }, [search, filterCustomer, filterSite, sitesByProject])
+
+  const filteredBase = useMemo(() => projects.filter(matchesFilters), [projects, matchesFilters])
+  const filtered = filteredBase.filter(p => filterStatus === 'all' || p.status === filterStatus)
+  const countFor = (status: string) => status === 'all'
+    ? filteredBase.length
+    : filteredBase.filter(p => p.status === status).length
+  const hasFilter = search !== '' || filterCustomer !== '' || filterSite !== ''
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this project?')) return
@@ -152,13 +182,37 @@ export function ProjectsModule() {
         ))}
       </div>
 
+      {/* Filter bar — search / customer / site (AND), above the status tabs */}
+      <div className="flex flex-wrap gap-3 items-end bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3">
+        <div className="min-w-[180px] flex-1">
+          <Input label="Search project name" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Type to filter…" />
+        </div>
+        <div className="min-w-[150px]">
+          <Select label="Customer" value={filterCustomer} onChange={(e) => setFilterCustomer(e.target.value)}>
+            <option value="">All customers</option>
+            {customerOptions.map(c => <option key={c} value={c}>{c}</option>)}
+          </Select>
+        </div>
+        <div className="min-w-[150px]">
+          <Select label="Site code" value={filterSite} onChange={(e) => setFilterSite(e.target.value)}>
+            <option value="">All sites</option>
+            {siteCodeOptions.map(c => <option key={c} value={c}>{c}</option>)}
+          </Select>
+        </div>
+        {hasFilter && (
+          <Button variant="secondary" onClick={() => { setSearch(''); setFilterCustomer(''); setFilterSite('') }}>
+            Clear
+          </Button>
+        )}
+      </div>
+
       {/* Filters + Actions */}
       <div className="flex flex-wrap gap-3 items-center justify-between">
         <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
           {['all','not_started','in_progress','on_hold','completed'].map(s => (
             <button key={s} onClick={() => setFilterStatus(s)}
               className={`px-3 py-1.5 text-xs font-semibold rounded capitalize transition-all ${filterStatus===s ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'}`}>
-              {s.replace('_',' ')}
+              {s.replace('_',' ')} <span className="opacity-70">({countFor(s)})</span>
             </button>
           ))}
         </div>
