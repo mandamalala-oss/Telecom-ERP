@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, waitFor, cleanup } from '@testing-library/react'
+import { render, screen, waitFor, cleanup, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EntityFormModal, type FieldConfig } from './EntityFormModal'
 
@@ -292,5 +292,39 @@ describe('EntityFormModal — sitePicker', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
     expect(onSubmit.mock.calls[0][0]).toMatchObject({ siteId: 's2', projectName: 'STARLINK' })
+  })
+})
+
+describe('EntityFormModal — permissions matrix', () => {
+  const permField: FieldConfig = { key: 'permissions', label: 'Module Permissions', type: 'permissions' }
+
+  it('renders a None/View/Edit radio set per module', async () => {
+    renderForm([permField])
+    await screen.findByText('Projects')
+    const row = screen.getByText('Projects').closest('div')!
+    expect(within(row).getByRole('radio', { name: 'View' })).toBeTruthy()
+    expect(within(row).getByRole('radio', { name: 'Edit' })).toBeTruthy()
+    expect(within(row).getByRole('radio', { name: 'None' })).toBeTruthy()
+  })
+
+  it('saves the selected levels as an object and drops None', async () => {
+    const onSubmit = renderForm([permField, { key: 'name', label: 'Name', type: 'text' }])
+    await userEvent.type(screen.getByLabelText('Name'), 'Ada')
+    // Set Projects → Edit, Sites → View
+    const projectRow = screen.getByText('Projects').closest('div')!
+    await userEvent.click(within(projectRow).getByRole('radio', { name: 'Edit' }))
+    const sitesRow = screen.getByText('Telecom Sites').closest('div')!
+    await userEvent.click(within(sitesRow).getByRole('radio', { name: 'View' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0].permissions).toEqual({ projects: 'edit', sites: 'view' })
+  })
+
+  it('pre-fills the matrix from the edit initial', async () => {
+    renderForm([permField], { permissions: { projects: 'edit', finance: 'view' } })
+    const projectRow = screen.getByText('Projects').closest('div')!
+    expect((within(projectRow).getByRole('radio', { name: 'Edit' }) as HTMLInputElement).checked).toBe(true)
+    const financeRow = screen.getByText('Finance').closest('div')!
+    expect((within(financeRow).getByRole('radio', { name: 'View' }) as HTMLInputElement).checked).toBe(true)
   })
 })

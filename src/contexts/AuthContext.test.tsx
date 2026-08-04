@@ -168,3 +168,44 @@ describe('describeAuthError', () => {
     expect(describeAuthError('boom')).toBe('boom')
   })
 })
+
+describe('AuthContext — per-module permission overrides', () => {
+  async function mountWith(profile: Record<string, any>) {
+    auth.getSession.mockResolvedValue({ data: { session: { user: { id: profile.authId ?? 'u1', email: profile.email } } }, error: null })
+    auth.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } })
+    listMock([profile])
+    const hook = renderAuth()
+    await waitFor(() => expect(hook.result.current.user).toBeTruthy())
+    return hook
+  }
+
+  it('role default grants edit on the role’s modules', async () => {
+    const { result } = await mountWith({ ...profile, role: 'pm', permissions: {} })
+    expect(result.current.can('projects')).toBe(true)
+    expect(result.current.canEdit('projects')).toBe(true)
+    expect(result.current.permissionLevel('projects')).toBe('edit')
+    expect(result.current.can('team')).toBe(false)
+  })
+
+  it('per-user override can demote edit to view', async () => {
+    const { result } = await mountWith({ ...profile, role: 'pm', permissions: { projects: 'view' } })
+    expect(result.current.can('projects')).toBe(true)
+    expect(result.current.canEdit('projects')).toBe(false)
+    expect(result.current.permissionLevel('projects')).toBe('view')
+  })
+
+  it('per-user override can grant view beyond the role default', async () => {
+    const { result } = await mountWith({ ...profile, role: 'engineer', permissions: { finance: 'view' } })
+    expect(result.current.can('finance')).toBe(true)
+    expect(result.current.canEdit('finance')).toBe(false)
+    // role default still applies where no override
+    expect(result.current.can('sites')).toBe(true)
+    expect(result.current.canEdit('sites')).toBe(true)
+  })
+
+  it('admin keeps edit everywhere unless overridden', async () => {
+    const { result } = await mountWith({ ...profile, role: 'admin', permissions: { finance: 'view' } })
+    expect(result.current.canEdit('anything')).toBe(true)
+    expect(result.current.permissionLevel('finance')).toBe('view')
+  })
+})

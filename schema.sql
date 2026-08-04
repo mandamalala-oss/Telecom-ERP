@@ -30,6 +30,7 @@ create table users (
   name        text not null,
   email       text unique not null,
   role        text not null default 'viewer' check (role in ('admin','pm','engineer','finance','viewer')),
+  permissions jsonb default '{}',
   avatar      text,
   department  text,
   phone       text,

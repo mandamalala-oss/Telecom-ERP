@@ -8,6 +8,8 @@ import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
 import { TABLES } from '@/lib/api/entityConfigs'
 import type { User, Task, Project } from '@/types'
+import { PERMISSION_MODULES, ROLE_PERMISSIONS } from '@/types'
+import { clsx } from 'clsx'
 
 const ROLE_COLOR: Record<string, string> = {
   admin:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
@@ -33,6 +35,14 @@ export function TeamModule() {
     } catch (e: any) {
       setActionError(e.message ?? String(e))
     }
+  }
+
+  // Effective access level per module: per-user override ?? role default.
+  const moduleLevel = (u: User, m: string): 'view' | 'edit' | null => {
+    const override = u.permissions?.[m]
+    if (override === 'view' || override === 'edit') return override
+    const perms = ROLE_PERMISSIONS[u.role] ?? []
+    return perms.includes('*') || perms.includes(m) ? 'edit' : null
   }
 
   return (
@@ -145,6 +155,26 @@ export function TeamModule() {
                   <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{item.v}</p>
                 </div>
               ))}
+            </div>
+
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Module Permissions</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {PERMISSION_MODULES.map(m => {
+                  const lv = moduleLevel(selected, m.key)
+                  return (
+                    <div key={m.key} className="flex items-center justify-between px-3 py-2 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
+                      <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{m.label}</span>
+                      <span className={clsx('text-[10px] font-bold uppercase px-2 py-0.5 rounded-full',
+                        lv === 'edit' ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                        lv === 'view' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                        'bg-slate-100 text-slate-400 dark:bg-slate-600')}>
+                        {lv ?? 'none'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
 
             <div>

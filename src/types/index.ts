@@ -9,7 +9,24 @@ export interface User {
   avatar: string;
   department: string;
   phone: string;
+  /** Per-module overrides: { module: 'view' | 'edit' }. Missing = role default. */
+  permissions?: Record<string, PermissionLevel>;
 }
+
+export type PermissionLevel = 'view' | 'edit'
+
+/** Modules shown in the Team permission checklist (view/edit per member). */
+export const PERMISSION_MODULES: { key: string; label: string }[] = [
+  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'crm',       label: 'CRM' },
+  { key: 'customers', label: 'Customers' },
+  { key: 'sites',     label: 'Telecom Sites' },
+  { key: 'projects',  label: 'Projects' },
+  { key: 'tasks',     label: 'Task Board' },
+  { key: 'evm',       label: 'Project Controls (EVM)' },
+  { key: 'inventory', label: 'Inventory' },
+  { key: 'finance',   label: 'Finance' },
+]
 
 export const ROLE_PERMISSIONS: Record<Role, string[]> = {
   admin:    ['*'],

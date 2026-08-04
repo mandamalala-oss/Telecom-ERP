@@ -386,6 +386,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'name', label: 'Name', type: 'text', required: true },
     { key: 'email', label: 'Email', type: 'text', required: true },
     { key: 'role', label: 'Role', type: 'select', options: ['admin', 'pm', 'engineer', 'finance', 'viewer'] },
+    { key: 'permissions', label: 'Module Permissions', type: 'permissions' },
     { key: 'department', label: 'Department', type: 'text' },
     { key: 'phone', label: 'Phone', type: 'text' },
   ],

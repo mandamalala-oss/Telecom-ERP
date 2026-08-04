@@ -31,6 +31,9 @@ export function buildPayload(
       // before the table insert/update (see stripVirtualFields below) and
       // handled as side effects (e.g. junction rows) by the module's hooks.
       payload[f.key] = Array.isArray(values[f.key]) ? [...values[f.key]] : []
+    } else if (f.type === 'permissions') {
+      // JSONB permission map — keep as a plain object (never a string).
+      payload[f.key] = values[f.key] && typeof values[f.key] === 'object' ? values[f.key] : {}
     } else if (f.type === 'number') {
       const v = values[f.key]
       if (v === '' || v === undefined || v === null) {

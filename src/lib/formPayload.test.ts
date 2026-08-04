@@ -116,3 +116,18 @@ describe('stripVirtualFields', () => {
     expect(out).toEqual({ name: 'X' })
   })
 })
+
+describe('buildPayload — permissions matrix', () => {
+  it('keeps the permission map as an object', () => {
+    const { payload } = buildPayload(
+      [f({ key: 'permissions', type: 'permissions' })],
+      { permissions: { projects: 'edit', sites: 'view' } }
+    )
+    expect(payload.permissions).toEqual({ projects: 'edit', sites: 'view' })
+  })
+
+  it('normalizes a missing map to {}', () => {
+    const { payload } = buildPayload([f({ key: 'permissions', type: 'permissions' })], { permissions: undefined })
+    expect(payload.permissions).toEqual({})
+  })
+})

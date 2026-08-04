@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import type { User } from '@/types'
+import type { PermissionLevel, User } from '@/types'
 import { ROLE_PERMISSIONS } from '@/types'
 import { supabase } from '@/lib/supabase'
 import { makeApi } from '@/lib/api/crud'
@@ -13,7 +13,12 @@ interface AuthContextType {
   /** Returns an error message, or null on success. */
   login: (email: string, password: string) => Promise<string | null>
   logout: () => Promise<void>
+  /** View access: per-user override ?? role default (ROLE_PERMISSIONS). */
   can: (module: string) => boolean
+  /** Edit access: 'edit' level for the module. */
+  canEdit: (module: string) => boolean
+  /** 'view' | 'edit' | null for a module. */
+  permissionLevel: (module: string) => PermissionLevel | null
   refreshUsers: () => Promise<User[]>
 }
 
@@ -162,14 +167,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
-  const can = (module: string) => {
-    if (!user) return false
-    const perms = ROLE_PERMISSIONS[user.role] ?? []
-    return perms.includes('*') || perms.includes(module)
+  // Per-module access: the member's own permission override wins; otherwise
+  // fall back to the role defaults (ROLE_PERMISSIONS grants 'edit' on every
+  // module the role can access).
+  const levelFor = (u: User | null, module: string): PermissionLevel | null => {
+    if (!u) return null
+    const override = u.permissions?.[module]
+    if (override === 'view' || override === 'edit') return override
+    const perms = ROLE_PERMISSIONS[u.role] ?? []
+    return perms.includes('*') || perms.includes(module) ? 'edit' : null
   }
 
+  const can = (module: string) => levelFor(user, module) !== null
+  const canEdit = (module: string) => levelFor(user, module) === 'edit'
+  const permissionLevel = (module: string) => levelFor(user, module)
+
   return (
-    <AuthContext.Provider value={{ user, users, loading, login, logout, can, refreshUsers }}>
+    <AuthContext.Provider value={{ user, users, loading, login, logout, can, canEdit, permissionLevel, refreshUsers }}>
       {children}
     </AuthContext.Provider>
   )

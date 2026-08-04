@@ -4,8 +4,9 @@ import { Input, Select, Textarea } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { makeApi } from '@/lib/api/crud'
 import { buildPayload } from '@/lib/formPayload'
+import { PERMISSION_MODULES } from '@/types'
 
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect' | 'sitePicker'
+export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect' | 'sitePicker' | 'permissions'
 
 export interface LookupConfig {
   /** Table to load options from (TABLES value, e.g. 'sites'). */
@@ -209,7 +210,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
       <form id="entity-form" onSubmit={handleSubmit} noValidate>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {fields.map((f) => (
-            <div key={f.key} className={f.type === 'textarea' || f.type === 'multiSelect' ? 'sm:col-span-2' : ''}>
+            <div key={f.key} className={f.type === 'textarea' || f.type === 'multiSelect' || f.type === 'permissions' ? 'sm:col-span-2' : ''}>
               {f.type === 'select' ? (
                 f.lookup ? (
                   <Select label={f.label} value={values[f.key] ?? ''} onChange={(e) => handleLookupChange(f, e.target.value)}>
@@ -233,6 +234,38 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                   <input type="checkbox" checked={!!values[f.key]} onChange={(e) => set(f.key, e.target.checked)} />
                   {f.label}
                 </label>
+              ) : f.type === 'permissions' ? (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</p>
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700 max-h-64 overflow-y-auto">
+                    {PERMISSION_MODULES.map(m => {
+                      const level = (values[f.key] ?? {})[m.key] ?? ''
+                      return (
+                        <div key={m.key} className="flex items-center justify-between gap-2 px-3 py-1.5">
+                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{m.label}</span>
+                          <div className="flex items-center gap-3 text-xs">
+                            {(['', 'view', 'edit'] as const).map(lv => (
+                              <label key={lv || 'none'} className="flex items-center gap-1 cursor-pointer text-slate-500 dark:text-slate-400">
+                                <input
+                                  type="radio"
+                                  name={`perm-${f.key}-${m.key}`}
+                                  checked={level === lv}
+                                  onChange={() => {
+                                    const next = { ...(values[f.key] ?? {}) }
+                                    if (lv === '') delete next[m.key]
+                                    else next[m.key] = lv
+                                    set(f.key, next)
+                                  }}
+                                />
+                                {lv === '' ? 'None' : lv === 'view' ? 'View' : 'Edit'}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
               ) : f.type === 'sitePicker' ? (
                 <div className="space-y-2">
                   <Select label="Project" value={values[f.projectNameField ?? 'projectName'] ?? ''} onChange={(e) => handleSitePickerProject(f, e.target.value)}>
@@ -298,6 +331,7 @@ function buildInitial(fields: FieldConfig[], initial?: Record<string, any>) {
     const v = initial?.[f.key]
     if (f.type === 'tags') out[f.key] = Array.isArray(v) ? v.join(', ') : (v ?? '')
     else if (f.type === 'multiSelect') out[f.key] = Array.isArray(v) ? [...v] : []
+    else if (f.type === 'permissions') out[f.key] = v && typeof v === 'object' ? { ...v } : {}
     else if (f.type === 'date' && typeof v === 'string') out[f.key] = v.slice(0, 10)
     else out[f.key] = v ?? (f.type === 'checkbox' ? false : '')
   }
