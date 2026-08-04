@@ -235,13 +235,15 @@ Model: Constraint satisfaction + genetic algorithm
 ## Security Architecture
 
 ```
-Authentication:  Demo user-picker over the `users` table (no passwords yet)
-Authorization:   UI-level role gating (ROLE_PERMISSIONS / can())
+Authentication:  Supabase Auth — email/password (login page, session in `AuthContext`)
+Authorization:   UI role gating (ROLE_PERMISSIONS / can()) + route guards (RequireAuth/RequireModule)
+RLS:             Role-scoped policies on core tables via app_role()/app_has_role() (migration 012);
+                 remaining tables still allow_all (phase 2)
 Transport:       TLS 1.3 minimum
-API:             Supabase anon key (public)
+API:             Supabase anon key (public) — data access gated by RLS once signed in
 Storage:         Not wired yet — the Documents module stores file URLs in text fields
 Audit:           None yet
-Document access: Application level only — RLS policies are open (allow_all)
+Document access: Core tables role-scoped (012); other tables application-level only
 ```
 
 ### Approval Workflows
