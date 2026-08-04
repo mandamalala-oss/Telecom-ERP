@@ -385,9 +385,9 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   users: [
     { key: 'name', label: 'Name', type: 'text', required: true },
     { key: 'email', label: 'Email', type: 'text', required: true },
-    { key: 'role', label: 'Role', type: 'select', options: ['admin', 'pm', 'engineer', 'finance', 'viewer'] },
+    { key: 'role', label: 'Role', type: 'select', options: ['CEO', 'Manager', 'Inspector', 'Team Leader'] },
     { key: 'permissions', label: 'Module Permissions', type: 'permissions' },
-    { key: 'department', label: 'Department', type: 'text' },
+    { key: 'department', label: 'Department', type: 'select', options: ['Direction', 'HSE', 'Logistic', 'Project'] },
     { key: 'phone', label: 'Phone', type: 'text' },
   ],
 }

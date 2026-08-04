@@ -58,9 +58,9 @@ begin
     raise notice 'admin created';
   end if;
 
-  -- The 012 sync trigger created the profile with role 'viewer' — promote it.
+  -- The 012 sync trigger created the profile with role 'Team Leader' — promote it.
   update public.users
-  set role = 'admin'
+  set role = 'CEO'
   where lower(email) = lower(v_email);
 
   raise notice 'profile role set to admin';

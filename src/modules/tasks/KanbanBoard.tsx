@@ -100,7 +100,7 @@ export function KanbanBoard() {
         </select>
         <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)} className="select w-48 text-sm">
           <option value="all">All Assignees</option>
-          {users.filter(u => u.role === 'engineer' || u.role === 'pm').map(u =>
+          {users.filter(u => u.role === 'Team Leader' || u.role === 'Inspector' || u.role === 'Manager').map(u =>
             <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
         <Button variant="secondary" icon={<Plus className="w-4 h-4"/>} onClick={openCreate}>New Task</Button>

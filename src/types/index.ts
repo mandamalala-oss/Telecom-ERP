@@ -1,5 +1,5 @@
 // ─── AUTH / RBAC ────────────────────────────────────────────────────────────
-export type Role = 'admin' | 'pm' | 'engineer' | 'finance' | 'viewer';
+export type Role = 'CEO' | 'Manager' | 'Inspector' | 'Team Leader';
 
 export interface User {
   id: string;
@@ -15,6 +15,9 @@ export interface User {
 
 export type PermissionLevel = 'view' | 'edit'
 
+/** Departments selectable in the Team form. */
+export const DEPARTMENTS = ['Direction', 'HSE', 'Logistic', 'Project'] as const
+
 /** Modules shown in the Team permission checklist (view/edit per member). */
 export const PERMISSION_MODULES: { key: string; label: string }[] = [
   { key: 'dashboard', label: 'Dashboard' },
@@ -29,11 +32,10 @@ export const PERMISSION_MODULES: { key: string; label: string }[] = [
 ]
 
 export const ROLE_PERMISSIONS: Record<Role, string[]> = {
-  admin:    ['*'],
-  pm:       ['dashboard','crm','customers','sites','projects','tasks','evm','inventory','finance'],
-  engineer: ['sites','projects','tasks','inventory'],
-  finance:  ['dashboard','finance','customers','evm'],
-  viewer:   ['dashboard','sites','projects'],
+  CEO:         ['*'],
+  Manager:     ['dashboard','crm','customers','sites','projects','tasks','evm','inventory','finance'],
+  'Team Leader': ['sites','projects','tasks'],
+  Inspector:   ['sites','projects','tasks'],
 };
 
 // ─── CRM ────────────────────────────────────────────────────────────────────

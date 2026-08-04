@@ -11,17 +11,16 @@ import { makeApi } from '@/lib/api/crud'
 import { supabase } from '@/lib/supabase'
 import { TABLES } from '@/lib/api/entityConfigs'
 import type { User, Task, Project } from '@/types'
-import { PERMISSION_MODULES, ROLE_PERMISSIONS } from '@/types'
+import { DEPARTMENTS, PERMISSION_MODULES, ROLE_PERMISSIONS } from '@/types'
 import { clsx } from 'clsx'
 
 const usersApi = makeApi<User>('users')
 
 const ROLE_COLOR: Record<string, string> = {
-  admin:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
-  pm:       'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
-  engineer: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  finance:  'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  viewer:   'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-400',
+  CEO:          'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  Manager:      'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400',
+  'Team Leader': 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+  Inspector:    'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
 }
 
 export function TeamModule() {
@@ -31,7 +30,7 @@ export function TeamModule() {
   const [selected, setSelected] = useState<User | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
-  const [invite, setInvite] = useState({ name: '', email: '', password: '', role: 'viewer', department: '', phone: '' })
+  const [invite, setInvite] = useState({ name: '', email: '', password: '', role: 'Team Leader', department: '', phone: '' })
   const [inviteError, setInviteError] = useState<string | null>(null)
   const [inviting, setInviting] = useState(false)
 
@@ -62,7 +61,7 @@ export function TeamModule() {
       }
       await refreshUsers()
       setInviteOpen(false)
-      setInvite({ name: '', email: '', password: '', role: 'viewer', department: '', phone: '' })
+      setInvite({ name: '', email: '', password: '', role: 'Team Leader', department: '', phone: '' })
     } catch (err: any) {
       setInviteError(err?.message ?? String(err))
     } finally {
@@ -94,9 +93,9 @@ export function TeamModule() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { l: 'Total Members', v: users.length,                                          color: 'text-blue-600' },
-          { l: 'Engineers',     v: users.filter(u => u.role === 'engineer').length,        color: 'text-amber-600' },
-          { l: 'Project Mgrs',  v: users.filter(u => u.role === 'pm' || u.role === 'admin').length, color: 'text-purple-600' },
-          { l: 'Finance',       v: users.filter(u => u.role === 'finance').length,         color: 'text-green-600' },
+          { l: 'Team Leaders',  v: users.filter(u => u.role === 'Team Leader').length,      color: 'text-blue-600' },
+          { l: 'Managers',      v: users.filter(u => u.role === 'Manager').length,          color: 'text-purple-600' },
+          { l: 'Inspectors',    v: users.filter(u => u.role === 'Inspector').length,        color: 'text-green-600' },
         ].map(s => (
           <Card key={s.l} className="p-4">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{s.l}</p>
@@ -272,10 +271,12 @@ export function TeamModule() {
             <Input label="Email (login)" type="email" required value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} placeholder="they@company.mg" />
             <Input label="Temporary password" type="text" required value={invite.password} onChange={(e) => setInvite({ ...invite, password: e.target.value })} placeholder="e.g. Temp2026!" />
             <Select label="Role" value={invite.role} onChange={(e) => setInvite({ ...invite, role: e.target.value })}>
-              {['viewer', 'engineer', 'pm', 'finance', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
+              {['Team Leader', 'Inspector', 'Manager', 'CEO'].map(r => <option key={r} value={r}>{r}</option>)}
             </Select>
             <div className="grid grid-cols-2 gap-4">
-              <Input label="Department" value={invite.department} onChange={(e) => setInvite({ ...invite, department: e.target.value })} />
+              <Select label="Department" value={invite.department} onChange={(e) => setInvite({ ...invite, department: e.target.value })}>
+                {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+              </Select>
               <Input label="Phone" value={invite.phone} onChange={(e) => setInvite({ ...invite, phone: e.target.value })} />
             </div>
             {inviteError && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-2.5">{inviteError}</p>}

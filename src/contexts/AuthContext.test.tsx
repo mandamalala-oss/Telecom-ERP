@@ -22,7 +22,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('@/lib/supabase', () => ({ supabase: { auth } }))
 vi.mock('@/lib/api/crud', () => ({ makeApi: mocks.makeApi }))
 
-const profile = { id: 'u1', name: 'Ada', email: 'ada@x.mg', role: 'admin', avatar: '', department: '', phone: '', authId: 'u1' }
+const profile = { id: 'u1', name: 'Ada', email: 'ada@x.mg', role: 'CEO', avatar: '', department: '', phone: '', authId: 'u1' }
 
 function listMock(rows: unknown[]) { mocks.rows.value = rows }
 
@@ -49,7 +49,7 @@ describe('AuthContext — session', () => {
     const { result } = renderAuth()
     await waitFor(() => expect(result.current.loading).toBe(false))
     expect(result.current.user?.id).toBe('u1')
-    expect(result.current.user?.role).toBe('admin')
+    expect(result.current.user?.role).toBe('CEO')
   })
 
   it('stays signed out when there is no session', async () => {
@@ -107,12 +107,12 @@ describe('AuthContext — can() role gating', () => {
   it('grants modules from ROLE_PERMISSIONS for the profile role', async () => {
     auth.getSession.mockResolvedValue({ data: { session: { user: { id: 'u2', email: 'pm@x.mg' } } }, error: null })
     auth.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } })
-    listMock([{ ...profile, id: 'u2', role: 'pm', authId: 'u2' }])
+    listMock([{ ...profile, id: 'u2', role: 'Manager', authId: 'u2' }])
     const { result } = renderAuth()
-    await waitFor(() => expect(result.current.user?.role).toBe('pm'))
+    await waitFor(() => expect(result.current.user?.role).toBe('Manager'))
     expect(result.current.can('projects')).toBe(true)
     expect(result.current.can('finance')).toBe(true)
-    expect(result.current.can('team')).toBe(false) // not in pm's list
+    expect(result.current.can('team')).toBe(false) // not in Manager's list
   })
 
   it('admin can do everything', async () => {
@@ -120,7 +120,7 @@ describe('AuthContext — can() role gating', () => {
     auth.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } })
     listMock([profile])
     const { result } = renderAuth()
-    await waitFor(() => expect(result.current.user?.role).toBe('admin'))
+    await waitFor(() => expect(result.current.user?.role).toBe('CEO'))
     expect(result.current.can('anything-at-all')).toBe(true)
   })
 
@@ -180,7 +180,7 @@ describe('AuthContext — per-module permission overrides', () => {
   }
 
   it('role default grants edit on the role’s modules', async () => {
-    const { result } = await mountWith({ ...profile, role: 'pm', permissions: {} })
+    const { result } = await mountWith({ ...profile, role: 'Manager', permissions: {} })
     expect(result.current.can('projects')).toBe(true)
     expect(result.current.canEdit('projects')).toBe(true)
     expect(result.current.permissionLevel('projects')).toBe('edit')
@@ -188,14 +188,14 @@ describe('AuthContext — per-module permission overrides', () => {
   })
 
   it('per-user override can demote edit to view', async () => {
-    const { result } = await mountWith({ ...profile, role: 'pm', permissions: { projects: 'view' } })
+    const { result } = await mountWith({ ...profile, role: 'Manager', permissions: { projects: 'view' } })
     expect(result.current.can('projects')).toBe(true)
     expect(result.current.canEdit('projects')).toBe(false)
     expect(result.current.permissionLevel('projects')).toBe('view')
   })
 
   it('per-user override can grant view beyond the role default', async () => {
-    const { result } = await mountWith({ ...profile, role: 'engineer', permissions: { finance: 'view' } })
+    const { result } = await mountWith({ ...profile, role: 'Inspector', permissions: { finance: 'view' } })
     expect(result.current.can('finance')).toBe(true)
     expect(result.current.canEdit('finance')).toBe(false)
     // role default still applies where no override
@@ -204,7 +204,7 @@ describe('AuthContext — per-module permission overrides', () => {
   })
 
   it('admin keeps edit everywhere unless overridden', async () => {
-    const { result } = await mountWith({ ...profile, role: 'admin', permissions: { finance: 'view' } })
+    const { result } = await mountWith({ ...profile, role: 'CEO', permissions: { finance: 'view' } })
     expect(result.current.canEdit('anything')).toBe(true)
     expect(result.current.permissionLevel('finance')).toBe('view')
   })

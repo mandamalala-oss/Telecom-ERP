@@ -22,8 +22,8 @@ create policy "users_read" on public.users
 drop policy if exists "users_write_admin" on public.users;
 create policy "users_write_admin" on public.users
   for all
-  using (public.app_has_role(array['admin']))
-  with check (public.app_has_role(array['admin']));
+  using (public.app_has_role(array['CEO']))
+  with check (public.app_has_role(array['CEO']));
 
 -- Verify:
 -- 1) plain read must work (no recursion):

@@ -29,7 +29,7 @@ create table users (
   auth_id     uuid unique,
   name        text not null,
   email       text unique not null,
-  role        text not null default 'viewer' check (role in ('admin','pm','engineer','finance','viewer')),
+  role        text not null default 'Team Leader' check (role in ('CEO','Manager','Inspector','Team Leader')),
   permissions jsonb default '{}',
   avatar      text,
   department  text,
@@ -678,7 +678,7 @@ begin
     new.id,
     coalesce(new.raw_user_meta_data ->> 'name', split_part(new.email, '@', 1)),
     new.email,
-    'viewer'
+    'Team Leader'
   )
   on conflict (email) do update
     set auth_id = excluded.auth_id,
@@ -716,73 +716,73 @@ create policy "users_read" on public.users
   for select using (auth.uid() is not null);
 create policy "users_write_admin" on public.users
   for all
-  using (public.app_has_role(array['admin']))
-  with check (public.app_has_role(array['admin']));
+  using (public.app_has_role(array['CEO']))
+  with check (public.app_has_role(array['CEO']));
 
 -- sites / projects / project_sites / tasks: everyone reads; admin/pm/engineer write.
 alter table public.sites enable row level security;
 drop policy if exists "allow_all_sites" on public.sites;
 create policy "sites_read" on public.sites for select using (public.app_role() is not null);
 create policy "sites_write" on public.sites for all
-  using (public.app_has_role(array['admin','pm','engineer']))
-  with check (public.app_has_role(array['admin','pm','engineer']));
+  using (public.app_has_role(array['CEO','Manager','Team Leader','Inspector']))
+  with check (public.app_has_role(array['CEO','Manager','Team Leader','Inspector']));
 
 alter table public.projects enable row level security;
 drop policy if exists "allow_all_projects" on public.projects;
 create policy "projects_read" on public.projects for select using (public.app_role() is not null);
 create policy "projects_write" on public.projects for all
-  using (public.app_has_role(array['admin','pm','engineer']))
-  with check (public.app_has_role(array['admin','pm','engineer']));
+  using (public.app_has_role(array['CEO','Manager','Team Leader','Inspector']))
+  with check (public.app_has_role(array['CEO','Manager','Team Leader','Inspector']));
 
 alter table public.project_sites enable row level security;
 drop policy if exists "allow_all_project_sites" on public.project_sites;
 create policy "project_sites_read" on public.project_sites for select using (public.app_role() is not null);
 create policy "project_sites_write" on public.project_sites for all
-  using (public.app_has_role(array['admin','pm','engineer']))
-  with check (public.app_has_role(array['admin','pm','engineer']));
+  using (public.app_has_role(array['CEO','Manager','Team Leader','Inspector']))
+  with check (public.app_has_role(array['CEO','Manager','Team Leader','Inspector']));
 
 alter table public.tasks enable row level security;
 drop policy if exists "allow_all_tasks" on public.tasks;
-create policy "tasks_read" on public.tasks for select using (public.app_has_role(array['admin','pm','engineer']));
+create policy "tasks_read" on public.tasks for select using (public.app_has_role(array['CEO','Manager','Team Leader','Inspector']));
 create policy "tasks_write" on public.tasks for all
-  using (public.app_has_role(array['admin','pm','engineer']))
-  with check (public.app_has_role(array['admin','pm','engineer']));
+  using (public.app_has_role(array['CEO','Manager','Team Leader','Inspector']))
+  with check (public.app_has_role(array['CEO','Manager','Team Leader','Inspector']));
 
 -- evm_metrics / companies / contacts / invoices / payments: admin/pm/finance.
 alter table public.evm_metrics enable row level security;
 drop policy if exists "allow_all_evm_metrics" on public.evm_metrics;
-create policy "evm_metrics_read" on public.evm_metrics for select using (public.app_has_role(array['admin','pm','finance']));
+create policy "evm_metrics_read" on public.evm_metrics for select using (public.app_has_role(array['CEO','Manager']));
 create policy "evm_metrics_write" on public.evm_metrics for all
-  using (public.app_has_role(array['admin','pm','finance']))
-  with check (public.app_has_role(array['admin','pm','finance']));
+  using (public.app_has_role(array['CEO','Manager']))
+  with check (public.app_has_role(array['CEO','Manager']));
 
 alter table public.companies enable row level security;
 drop policy if exists "allow_all_companies" on public.companies;
-create policy "companies_read" on public.companies for select using (public.app_has_role(array['admin','pm','finance']));
+create policy "companies_read" on public.companies for select using (public.app_has_role(array['CEO','Manager']));
 create policy "companies_write" on public.companies for all
-  using (public.app_has_role(array['admin','pm','finance']))
-  with check (public.app_has_role(array['admin','pm','finance']));
+  using (public.app_has_role(array['CEO','Manager']))
+  with check (public.app_has_role(array['CEO','Manager']));
 
 alter table public.contacts enable row level security;
 drop policy if exists "allow_all_contacts" on public.contacts;
-create policy "contacts_read" on public.contacts for select using (public.app_has_role(array['admin','pm','finance']));
+create policy "contacts_read" on public.contacts for select using (public.app_has_role(array['CEO','Manager']));
 create policy "contacts_write" on public.contacts for all
-  using (public.app_has_role(array['admin','pm','finance']))
-  with check (public.app_has_role(array['admin','pm','finance']));
+  using (public.app_has_role(array['CEO','Manager']))
+  with check (public.app_has_role(array['CEO','Manager']));
 
 alter table public.invoices enable row level security;
 drop policy if exists "allow_all_invoices" on public.invoices;
-create policy "invoices_read" on public.invoices for select using (public.app_has_role(array['admin','pm','finance']));
+create policy "invoices_read" on public.invoices for select using (public.app_has_role(array['CEO','Manager']));
 create policy "invoices_write" on public.invoices for all
-  using (public.app_has_role(array['admin','pm','finance']))
-  with check (public.app_has_role(array['admin','pm','finance']));
+  using (public.app_has_role(array['CEO','Manager']))
+  with check (public.app_has_role(array['CEO','Manager']));
 
 alter table public.payments enable row level security;
 drop policy if exists "allow_all_payments" on public.payments;
-create policy "payments_read" on public.payments for select using (public.app_has_role(array['admin','pm','finance']));
+create policy "payments_read" on public.payments for select using (public.app_has_role(array['CEO','Manager']));
 create policy "payments_write" on public.payments for all
-  using (public.app_has_role(array['admin','pm','finance']))
-  with check (public.app_has_role(array['admin','pm','finance']));
+  using (public.app_has_role(array['CEO','Manager']))
+  with check (public.app_has_role(array['CEO','Manager']));
 
 -- ─── Realtime (optional, nice for live dashboards) ───────────────
 alter publication supabase_realtime add table tasks;
@@ -791,4 +791,4 @@ alter publication supabase_realtime add table projects;
 
 -- ─── Seed: a starter admin user so the login screen has someone ──
 insert into users (name, email, role, avatar, department, phone) values
-  ('Malala', 'malala@manongadoria.mg', 'admin', '', 'Direction', '');
+  ('Malala', 'malala@manongadoria.mg', 'CEO', '', 'Direction', '');
