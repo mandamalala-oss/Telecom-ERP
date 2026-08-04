@@ -653,20 +653,135 @@ create trigger trg_boq_updated_at           before update on boqs               
 create trigger trg_assets_updated_at        before update on assets             for each row execute function set_updated_at();
 
 -- ─── Row Level Security ─────────────────────────────────────────
--- Internal single-tenant tool: every table is open to the anon
--- key (this is what the browser app uses). If you later add real
--- Supabase Auth / multi-tenant access, replace these permissive
--- policies with role/tenant-scoped ones.
+-- Real Supabase Auth (email/password) with role-scoped RLS on the core
+-- tables. Non-core tables keep open allow_all policies (phase 2 TODO).
+-- Canonical copy — the live DB applies it via database/migrations/012_auth_rls.sql.
+
+-- Role helpers (security definer: RLS policies may read `users` w/o recursion).
+create or replace function public.app_role() returns text
+language sql stable security definer set search_path = public
+as $$ select role from public.users where auth_id = auth.uid() $$;
+
+create or replace function public.app_has_role(roles text[]) returns boolean
+language sql stable security definer set search_path = public
+as $$ select public.app_role() = any(roles) $$;
+
+-- users ↔ auth.users sync: on signup/update, upsert the profile row.
+create or replace function public.sync_user_from_auth() returns trigger
+language plpgsql security definer set search_path = public
+as $$
+begin
+  insert into public.users (id, auth_id, name, email, role)
+  values (
+    new.id,
+    new.id,
+    coalesce(new.raw_user_meta_data ->> 'name', split_part(new.email, '@', 1)),
+    new.email,
+    'viewer'
+  )
+  on conflict (email) do update
+    set auth_id = excluded.auth_id,
+        name    = excluded.name;
+  return new;
+end;
+$$;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.sync_user_from_auth();
+create trigger on_auth_user_updated
+  after update of email, raw_user_meta_data on auth.users
+  for each row execute function public.sync_user_from_auth();
+
+-- Non-core tables keep the permissive policy (phase 2: role-scope the rest).
 do $$
 declare t text;
 begin
   for t in
-    select tablename from pg_tables where schemaname = 'public'
+    select tablename from pg_tables
+    where schemaname = 'public'
+      and tablename not in ('users','sites','projects','project_sites','tasks','evm_metrics','companies','contacts','invoices','payments')
   loop
     execute format('alter table public.%I enable row level security;', t);
     execute format('create policy "allow_all_%1$s" on public.%1$I for all using (true) with check (true);', t);
   end loop;
 end $$;
+
+-- Core tables: role-scoped policies (matrix mirrors ROLE_PERMISSIONS in src/types).
+-- users: roster readable by any logged-in user; only admins write.
+alter table public.users enable row level security;
+drop policy if exists "allow_all_users" on public.users;
+create policy "users_read" on public.users
+  for select using (auth.uid() is not null);
+create policy "users_write_admin" on public.users
+  for all
+  using (auth.uid() in (select u.auth_id from public.users u where u.role = 'admin'))
+  with check (auth.uid() in (select u.auth_id from public.users u where u.role = 'admin'));
+
+-- sites / projects / project_sites / tasks: everyone reads; admin/pm/engineer write.
+alter table public.sites enable row level security;
+drop policy if exists "allow_all_sites" on public.sites;
+create policy "sites_read" on public.sites for select using (public.app_role() is not null);
+create policy "sites_write" on public.sites for insert/update/delete
+  using (public.app_has_role(array['admin','pm','engineer']))
+  with check (public.app_has_role(array['admin','pm','engineer']));
+
+alter table public.projects enable row level security;
+drop policy if exists "allow_all_projects" on public.projects;
+create policy "projects_read" on public.projects for select using (public.app_role() is not null);
+create policy "projects_write" on public.projects for insert/update/delete
+  using (public.app_has_role(array['admin','pm','engineer']))
+  with check (public.app_has_role(array['admin','pm','engineer']));
+
+alter table public.project_sites enable row level security;
+drop policy if exists "allow_all_project_sites" on public.project_sites;
+create policy "project_sites_read" on public.project_sites for select using (public.app_role() is not null);
+create policy "project_sites_write" on public.project_sites for insert/update/delete
+  using (public.app_has_role(array['admin','pm','engineer']))
+  with check (public.app_has_role(array['admin','pm','engineer']));
+
+alter table public.tasks enable row level security;
+drop policy if exists "allow_all_tasks" on public.tasks;
+create policy "tasks_read" on public.tasks for select using (public.app_has_role(array['admin','pm','engineer']));
+create policy "tasks_write" on public.tasks for insert/update/delete
+  using (public.app_has_role(array['admin','pm','engineer']))
+  with check (public.app_has_role(array['admin','pm','engineer']));
+
+-- evm_metrics / companies / contacts / invoices / payments: admin/pm/finance.
+alter table public.evm_metrics enable row level security;
+drop policy if exists "allow_all_evm_metrics" on public.evm_metrics;
+create policy "evm_metrics_read" on public.evm_metrics for select using (public.app_has_role(array['admin','pm','finance']));
+create policy "evm_metrics_write" on public.evm_metrics for insert/update/delete
+  using (public.app_has_role(array['admin','pm','finance']))
+  with check (public.app_has_role(array['admin','pm','finance']));
+
+alter table public.companies enable row level security;
+drop policy if exists "allow_all_companies" on public.companies;
+create policy "companies_read" on public.companies for select using (public.app_has_role(array['admin','pm','finance']));
+create policy "companies_write" on public.companies for insert/update/delete
+  using (public.app_has_role(array['admin','pm','finance']))
+  with check (public.app_has_role(array['admin','pm','finance']));
+
+alter table public.contacts enable row level security;
+drop policy if exists "allow_all_contacts" on public.contacts;
+create policy "contacts_read" on public.contacts for select using (public.app_has_role(array['admin','pm','finance']));
+create policy "contacts_write" on public.contacts for insert/update/delete
+  using (public.app_has_role(array['admin','pm','finance']))
+  with check (public.app_has_role(array['admin','pm','finance']));
+
+alter table public.invoices enable row level security;
+drop policy if exists "allow_all_invoices" on public.invoices;
+create policy "invoices_read" on public.invoices for select using (public.app_has_role(array['admin','pm','finance']));
+create policy "invoices_write" on public.invoices for insert/update/delete
+  using (public.app_has_role(array['admin','pm','finance']))
+  with check (public.app_has_role(array['admin','pm','finance']));
+
+alter table public.payments enable row level security;
+drop policy if exists "allow_all_payments" on public.payments;
+create policy "payments_read" on public.payments for select using (public.app_has_role(array['admin','pm','finance']));
+create policy "payments_write" on public.payments for insert/update/delete
+  using (public.app_has_role(array['admin','pm','finance']))
+  with check (public.app_has_role(array['admin','pm','finance']));
 
 -- ─── Realtime (optional, nice for live dashboards) ───────────────
 alter publication supabase_realtime add table tasks;

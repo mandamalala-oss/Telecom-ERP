@@ -1,7 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { AuthProvider }  from '@/contexts/AuthContext'
+import type { ReactElement } from 'react'
+import { AuthProvider, useAuth, firstAllowedPath } from '@/contexts/AuthContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { Layout }        from '@/components/layout/Layout'
+import { LoginPage }     from '@/components/auth/LoginPage'
 
 // V1 Modules
 import { ExecutiveDashboard } from '@/modules/dashboards/ExecutiveDashboard'
@@ -26,36 +28,60 @@ import { ProcurementModule }     from '@/modules/procurement/ProcurementModule'
 import { SubcontractorModule }   from '@/modules/subcontractors/SubcontractorModule'
 import { DocumentModule }        from '@/modules/dms/DocumentModule'
 
+/** Blocks everything behind a real Supabase session. */
+function RequireAuth({ children }: { children: ReactElement }) {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="h-screen flex items-center justify-center text-sm text-slate-400">Loading…</div>
+  if (!user) return <Navigate to="/login" replace />
+  return children
+}
+
+/** Route-level module guard — mirrors the Sidebar's module keys (ROLE_PERMISSIONS). */
+function RequireModule({ module, children }: { module: string; children: ReactElement }) {
+  const { can } = useAuth()
+  if (!can(module)) return <Navigate to={firstAllowedPath(can)} replace />
+  return children
+}
+
+const guard = (module: string, el: ReactElement) => <RequireModule module={module}>{el}</RequireModule>
+
+/** First module the current role can open — used as the landing/fallback path. */
+function Home() {
+  const { can } = useAuth()
+  return <Navigate to={firstAllowedPath(can)} replace />
+}
+
 export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
         <BrowserRouter>
           <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<Navigate to="/telecom-dashboard" replace />} />
-              {/* V2 - Primary */}
-              <Route path="telecom-dashboard" element={<TelecomDashboard />} />
-              <Route path="field-ops"         element={<FieldOpsModule />} />
-              <Route path="atp"               element={<ATPModule />} />
-              <Route path="boq"               element={<BOQModule />} />
-              <Route path="assets"            element={<AssetModule />} />
-              <Route path="resources"         element={<ResourceModule />} />
-              <Route path="procurement"       element={<ProcurementModule />} />
-              <Route path="subcontractors"    element={<SubcontractorModule />} />
-              <Route path="documents"         element={<DocumentModule />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
+              <Route index element={<Home />} />
+              {/* V2 - Primary (module keys mirror Sidebar) */}
+              <Route path="telecom-dashboard" element={guard('dashboard', <TelecomDashboard />)} />
+              <Route path="field-ops"         element={guard('projects', <FieldOpsModule />)} />
+              <Route path="atp"               element={guard('projects', <ATPModule />)} />
+              <Route path="boq"               element={guard('finance', <BOQModule />)} />
+              <Route path="assets"            element={guard('inventory', <AssetModule />)} />
+              <Route path="resources"         element={guard('dashboard', <ResourceModule />)} />
+              <Route path="procurement"       element={guard('finance', <ProcurementModule />)} />
+              <Route path="subcontractors"    element={guard('dashboard', <SubcontractorModule />)} />
+              <Route path="documents"         element={guard('dashboard', <DocumentModule />)} />
               {/* V1 */}
-              <Route path="dashboard"  element={<ExecutiveDashboard />} />
-              <Route path="crm"        element={<CRMModule />} />
-              <Route path="customers"  element={<CustomersModule />} />
-              <Route path="sites"      element={<SitesModule />} />
-              <Route path="projects"   element={<ProjectsModule />} />
-              <Route path="tasks"      element={<KanbanBoard />} />
-              <Route path="inventory"  element={<InventoryModule />} />
-              <Route path="finance"    element={<FinanceModule />} />
-              <Route path="evm"        element={<EVMModule />} />
-              <Route path="team"       element={<TeamModule />} />
-              <Route path="*"          element={<Navigate to="/telecom-dashboard" replace />} />
+              <Route path="dashboard"  element={guard('dashboard', <ExecutiveDashboard />)} />
+              <Route path="crm"        element={guard('crm', <CRMModule />)} />
+              <Route path="customers"  element={guard('customers', <CustomersModule />)} />
+              <Route path="sites"      element={guard('sites', <SitesModule />)} />
+              <Route path="projects"   element={guard('projects', <ProjectsModule />)} />
+              <Route path="tasks"      element={guard('tasks', <KanbanBoard />)} />
+              <Route path="inventory"  element={guard('inventory', <InventoryModule />)} />
+              <Route path="finance"    element={guard('finance', <FinanceModule />)} />
+              <Route path="evm"        element={guard('evm', <EVMModule />)} />
+              <Route path="team"       element={guard('dashboard', <TeamModule />)} />
+              <Route path="*"          element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Routes>
         </BrowserRouter>
