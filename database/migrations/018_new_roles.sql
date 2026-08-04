@@ -7,7 +7,10 @@
 --   admin → CEO · pm → Manager · finance → Manager · engineer → Inspector · viewer → Team Leader
 -- and re-applies the role-scoped RLS policies with the new role names.
 
--- 1) Migrate existing users.
+-- 1) Drop the OLD constraint FIRST so the role migration below can apply.
+alter table public.users drop constraint if exists users_role_check;
+
+-- 2) Migrate existing roles.
 update public.users set role = case role
   when 'admin'   then 'CEO'
   when 'pm'      then 'Manager'
@@ -17,13 +20,12 @@ update public.users set role = case role
   else role
 end;
 
--- 2) New role check constraint + default.
-alter table public.users drop constraint if exists users_role_check;
+-- 3) New role check constraint + default.
 alter table public.users add constraint users_role_check
   check (role in ('CEO','Manager','Inspector','Team Leader'));
 alter table public.users alter column role set default 'Team Leader';
 
--- 3) Recreate the sync trigger with the new default role.
+-- 4) Recreate the sync trigger with the new default role.
 create or replace function public.sync_user_from_auth() returns trigger
 language plpgsql security definer set search_path = public
 as $$
