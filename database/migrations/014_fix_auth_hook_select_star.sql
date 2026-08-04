@@ -20,12 +20,12 @@ declare r record;
 begin
   for r in
     select p.oid::regprocedure::text as signature,
-           pg_get_functiondef(p.oid) as definition
+           p.prosrc as definition   -- body text directly, no pg_get_functiondef
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
-      and pg_get_functiondef(p.oid) ~* 'from\s+public\.users'
-      and pg_get_functiondef(p.oid) ~* 'select\s+\*'
+      and p.prosrc ~* 'from\s+public\.users'
+      and p.prosrc ~* 'select\s+\*'
   loop
     raise notice 'FOUND SELECT * FROM public.users function: %', r.signature;
     raise notice '%', r.definition;
@@ -50,5 +50,5 @@ $$;
 -- from pg_proc p
 -- join pg_namespace n on n.oid = p.pronamespace
 -- where n.nspname = 'public'
---   and pg_get_functiondef(p.oid) ~* 'from\s+public\.users'
---   and pg_get_functiondef(p.oid) ~* 'select\s+\*';
+--   and p.prosrc ~* 'from\s+public\.users'
+--   and p.prosrc ~* 'select\s+\*';
