@@ -8,7 +8,7 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
-import { appendSnapshot, deriveEVM, rollupCustomerEVM } from '@/lib/evm'
+import { appendSnapshot, deriveEVM, evFromProgress, rollupCustomerEVM } from '@/lib/evm'
 import { TABLES } from '@/lib/api/entityConfigs'
 import type { EVMMetrics, ProjectSite, Site } from '@/types'
 import { clsx } from 'clsx'
@@ -70,14 +70,16 @@ function EVMRow({ label, value, subtitle, highlight }: { label: string; value: s
 export function EVMModule() {
   const { data: evmList, loading, error, openCreate, openEdit, remove, update, modal } = useEntityCrud<EVMMetrics>(
     TABLES.evmMetrics, 'EVM Record', undefined, undefined,
-    // Only BAC/PV/EV/AC (and percentComplete) are entered in the form;
-    // the rest of the EVM metrics are derived before the row is saved.
+    // Only PO/BAC/PV/AC (and percentComplete) are entered in the form; EV is
+    // derived (= BAC × progress %) and the rest of the EVM metrics are
+    // computed before the row is saved.
     (values) => {
+      const bac = Number(values.bac) || 0
+      const ev = evFromProgress(bac, Number(values.percentComplete) || 0)
       const { cpi, spi, sv, cv, eac, etc, vac, tcpi } = deriveEVM(
-        Number(values.bac) || 0, Number(values.pv) || 0,
-        Number(values.ev) || 0, Number(values.ac) || 0,
+        bac, Number(values.pv) || 0, ev, Number(values.ac) || 0,
       )
-      return { ...values, cpi, spi, sv, cv, eac, etc, vac, tcpi }
+      return { ...values, ev, cpi, spi, sv, cv, eac, etc, vac, tcpi }
     }
   )
   const [selected, setSelected] = useState<EVMMetrics | null>(null)
@@ -176,7 +178,7 @@ export function EVMModule() {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm text-slate-500">One record per site-installation (its project). Enter BAC / PV / EV / AC — CPI, SPI, SV, CV, EAC, ETC, VAC, TCPI are computed automatically. As the site progresses, edit the record and <strong>Save snapshot</strong> to build the S-curve over time; the Customer Rollup below sums all of a customer's sites.</p>
+          <p className="text-sm text-slate-500">One record per engagement (its project). Enter PO (customer), BAC (internal budget), PV, AC and progress % — EV = BAC × progress, and CPI, SPI, SV, CV, EAC, ETC, VAC, TCPI, Benefit (PO − AC) are computed automatically. As work progresses, edit the record and <strong>Save snapshot</strong> to build the S-curve over time; the Customer Rollup below sums all of a customer's sites.</p>
         </div>
         <Button icon={<Plus className="w-4 h-4" />} onClick={openCreate}>New EVM Record</Button>
       </div>
@@ -260,10 +262,17 @@ export function EVMModule() {
                 </div>
                 <div className="mt-3 space-y-1">
                   <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">PO</span><span className="font-bold">{fmt(r.po)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
                     <span className="text-slate-400">BAC</span><span className="font-bold">{fmt(r.bac)}</span>
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-400">PV / EV / AC</span><span className="font-bold">{fmt(r.pv)} / {fmt(r.ev)} / {fmt(r.ac)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">Benefit (PO − AC)</span>
+                    <span className={clsx('font-bold', r.benefit >= 0 ? 'text-green-600' : 'text-red-600')}>{fmt(r.benefit)}</span>
                   </div>
                   <div className="flex justify-between text-xs">
                     <span className="text-slate-400">SV / CV</span>
@@ -305,10 +314,12 @@ export function EVMModule() {
             </div>
 
             <div className="space-y-1.5">
-              <EVMRow label="BAC — Budget at Completion" value={fmt(selected.bac)} subtitle="Original approved budget" highlight="neutral" />
+              <EVMRow label="PO — Customer PO" value={fmt(selected.po)} subtitle="Contracted value from the customer" highlight="neutral" />
+              <EVMRow label="BAC — Internal Budget" value={fmt(selected.bac)} subtitle="Our budget at completion" highlight="neutral" />
               <EVMRow label="PV — Planned Value"  value={fmt(selected.pv)}  subtitle="Work planned to date" highlight="neutral" />
-              <EVMRow label="EV — Earned Value"   value={fmt(selected.ev)}  subtitle="Work completed (% × BAC)" highlight={selected.ev >= selected.pv ? 'good' : 'bad'} />
+              <EVMRow label="EV — Earned Value"   value={fmt(selected.ev)}  subtitle="BAC × progress % (derived)" highlight={selected.ev >= selected.pv ? 'good' : 'bad'} />
               <EVMRow label="AC — Actual Cost"    value={fmt(selected.ac)}  subtitle="Cost incurred to date" highlight="neutral" />
+              <EVMRow label="Benefit" value={fmt((selected.po ?? 0) - (selected.ac ?? 0))} subtitle="PO − AC" highlight={(selected.po ?? 0) - (selected.ac ?? 0) >= 0 ? 'good' : 'bad'} />
               <div className="my-2 border-t border-slate-200 dark:border-slate-700" />
               <EVMRow label="SV — Schedule Variance" value={fmt(selected.sv)} subtitle="EV − PV" highlight={selected.sv >= 0 ? 'good' : 'bad'} />
               <EVMRow label="CV — Cost Variance"     value={fmt(selected.cv)} subtitle="EV − AC" highlight={selected.cv >= 0 ? 'good' : 'bad'} />

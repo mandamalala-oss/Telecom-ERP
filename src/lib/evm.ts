@@ -28,6 +28,17 @@ export function deriveEVM(bac: number, pv: number, ev: number, ac: number): Deri
   return { cpi, spi, sv, cv, eac, etc, vac, tcpi }
 }
 
+/**
+ * EV = BAC × percentComplete / 100. The EVM form no longer takes a manual EV
+ * — progress % is the input and earned value follows from the budget.
+ * The percentage is clamped to 0–100 so a bad entry can't produce a negative
+ * or over-100% earned value. Pure + unit-tested.
+ */
+export function evFromProgress(bac: number, percentComplete: number): number {
+  const pct = Math.min(100, Math.max(0, percentComplete || 0))
+  return Math.round((bac || 0) * (pct / 100))
+}
+
 // ─── History snapshots ───────────────────────────────────────────────────────
 
 export interface EVMSnapshot {
@@ -58,6 +69,7 @@ export function appendSnapshot(
 
 export interface EVMRollupInput {
   customerName?: string | null;
+  po?: number;
   bac: number;
   pv: number;
   ev: number;
@@ -67,10 +79,12 @@ export interface EVMRollupInput {
 export interface EVMCustomerRollup extends DerivedEVM {
   customerName: string;
   siteCount: number;      // number of per-site EVM records grouped here
+  po: number;             // customer PO summed across the sites
   bac: number;
   pv: number;
   ev: number;
   ac: number;
+  benefit: number;        // PO − AC: money received vs spent
   percentComplete: number; // ΣEV / ΣBAC × 100
 }
 
@@ -89,13 +103,14 @@ export function rollupCustomerEVM(records: EVMRollupInput[]): EVMCustomerRollup[
     if (!rollup) {
       rollup = {
         customerName: name, siteCount: 0,
-        bac: 0, pv: 0, ev: 0, ac: 0,
-        percentComplete: 0,
+        po: 0, bac: 0, pv: 0, ev: 0, ac: 0,
+        benefit: 0, percentComplete: 0,
         cpi: 0, spi: 0, sv: 0, cv: 0, eac: 0, etc: 0, vac: 0, tcpi: 0,
       }
       acc.set(name, rollup)
     }
     rollup.siteCount += 1
+    rollup.po += r.po ?? 0
     rollup.bac += r.bac ?? 0
     rollup.pv += r.pv ?? 0
     rollup.ev += r.ev ?? 0
@@ -104,6 +119,7 @@ export function rollupCustomerEVM(records: EVMRollupInput[]): EVMCustomerRollup[
   const result = [...acc.values()]
   for (const rollup of result) {
     Object.assign(rollup, deriveEVM(rollup.bac, rollup.pv, rollup.ev, rollup.ac))
+    rollup.benefit = rollup.po - rollup.ac
     rollup.percentComplete = rollup.bac > 0 ? (rollup.ev / rollup.bac) * 100 : 0
   }
   result.sort((a, b) => b.bac - a.bac)

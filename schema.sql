@@ -287,6 +287,7 @@ create table evm_metrics (
   project_id       uuid references projects(id) on delete cascade,
   project_name     text,
   customer_name    text,
+  po               bigint default 0,
   bac              bigint default 0,
   pv               bigint default 0,
   ev               bigint default 0,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { appendSnapshot, deriveEVM, rollupCustomerEVM } from '@/lib/evm'
+import { appendSnapshot, deriveEVM, evFromProgress, rollupCustomerEVM } from '@/lib/evm'
 
 describe('deriveEVM', () => {
   it('computes all derived metrics from BAC/PV/EV/AC', () => {
@@ -66,6 +66,28 @@ describe('appendSnapshot', () => {
   })
 })
 
+describe('evFromProgress', () => {
+  it('computes EV = BAC × progress %', () => {
+    expect(evFromProgress(1_000_000, 40)).toBe(400_000)
+    expect(evFromProgress(1_000_000, 100)).toBe(1_000_000)
+    expect(evFromProgress(1_000_000, 0)).toBe(0)
+  })
+
+  it('rounds to the nearest Ariary', () => {
+    expect(evFromProgress(1_000_003, 33)).toBe(330_001) // 1_000_003 × 0.33 = 330_000.99
+  })
+
+  it('clamps progress outside 0–100', () => {
+    expect(evFromProgress(1000, 150)).toBe(1000)
+    expect(evFromProgress(1000, -10)).toBe(0)
+  })
+
+  it('guards bac = 0 or NaN', () => {
+    expect(evFromProgress(0, 50)).toBe(0)
+    expect(evFromProgress(Number.NaN, 50)).toBe(0)
+  })
+})
+
 describe('rollupCustomerEVM', () => {
   it('sums BAC/PV/EV/AC across a customer’s sites and re-derives the metrics', () => {
     const rollups = rollupCustomerEVM([
@@ -108,6 +130,24 @@ describe('rollupCustomerEVM', () => {
     expect(rollups[0].customerName).toBe('—')
     expect(rollups[0].siteCount).toBe(2)
     expect(rollups[0].bac).toBe(300)
+  })
+
+  it('sums PO across sites and reports Benefit = PO − AC', () => {
+    const rollups = rollupCustomerEVM([
+      { customerName: 'Telma', po: 2_500_000, bac: 1_000_000, pv: 500_000, ev: 400_000, ac: 320_000 },
+      { customerName: 'Telma', po: 3_500_000, bac: 2_000_000, pv: 1_500_000, ev: 1_000_000, ac: 900_000 },
+    ])
+    const t = rollups[0]
+    expect(t.po).toBe(6_000_000)
+    expect(t.benefit).toBe(6_000_000 - 1_220_000)
+  })
+
+  it('treats missing PO as 0', () => {
+    const rollups = rollupCustomerEVM([
+      { customerName: 'Telma', bac: 1000, pv: 500, ev: 400, ac: 320 },
+    ])
+    expect(rollups[0].po).toBe(0)
+    expect(rollups[0].benefit).toBe(-320)
   })
 
   it('returns an empty array for no records', () => {

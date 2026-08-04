@@ -310,6 +310,7 @@ export interface EVMMetrics {
   projectId: string;
   projectName: string;
   customerName: string;
+  po: number;
   bac: number;
   pv: number;
   ev: number;
