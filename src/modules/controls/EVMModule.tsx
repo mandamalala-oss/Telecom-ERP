@@ -1,15 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, Legend, ReferenceLine
 } from 'recharts'
-import { Plus, Pencil, Trash2 } from 'lucide-react'
+import { Camera, Plus, Pencil, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
-import { deriveEVM } from '@/lib/evm'
+import { useEntity } from '@/lib/hooks/useEntity'
+import { appendSnapshot, deriveEVM, rollupCustomerEVM } from '@/lib/evm'
 import { TABLES } from '@/lib/api/entityConfigs'
-import type { EVMMetrics } from '@/types'
+import type { EVMMetrics, ProjectSite, Site } from '@/types'
 import { clsx } from 'clsx'
 
 const fmt    = (n: number | null | undefined) => { const v = n ?? 0; return v >= 1e6 ? `${(v/1e6).toFixed(2)}M Ar` : `${v.toLocaleString()} Ar` }
@@ -28,6 +29,22 @@ function IndexGauge({ label, value, good = true }: { label: string; value: numbe
       <p className={clsx('text-xs font-semibold mt-1', isGood ? 'text-green-500' : 'text-red-500')}>
         {(value ?? 0) === 1 ? 'On target' : `${isGood ? '+' : '-'}${deviation}% vs baseline`}
       </p>
+    </div>
+  )
+}
+
+function SiteList({ sites, limit = 0 }: { sites: Site[]; limit?: number }) {
+  if (sites.length === 0) return <p className="text-xs font-mono text-slate-400 mt-0.5">— no sites linked —</p>
+  const shown = limit > 0 ? sites.slice(0, limit) : sites
+  const rest = sites.length - shown.length
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-1">
+      {shown.map(s => (
+        <span key={s.id} className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300">
+          {s.siteId} — {s.name}
+        </span>
+      ))}
+      {rest > 0 && <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-600 text-slate-500 dark:text-slate-300">+{rest} more</span>}
     </div>
   )
 }
@@ -51,7 +68,7 @@ function EVMRow({ label, value, subtitle, highlight }: { label: string; value: s
 }
 
 export function EVMModule() {
-  const { data: evmList, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<EVMMetrics>(
+  const { data: evmList, loading, error, openCreate, openEdit, remove, update, modal } = useEntityCrud<EVMMetrics>(
     TABLES.evmMetrics, 'EVM Record', undefined, undefined,
     // Only BAC/PV/EV/AC (and percentComplete) are entered in the form;
     // the rest of the EVM metrics are derived before the row is saved.
@@ -65,6 +82,50 @@ export function EVMModule() {
   )
   const [selected, setSelected] = useState<EVMMetrics | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [snapshotMsg, setSnapshotMsg] = useState<string | null>(null)
+
+  // A project covers one or more sites (project_sites junction) and EVM is
+  // one record per project — so resolve every site behind the project and
+  // show them as chips: one engagement (project + customer) = one EVM that
+  // lists its sites, like the original multi-site model.
+  const { data: projectSites } = useEntity<ProjectSite>(TABLES.projectSites)
+  const { data: sites } = useEntity<Site>(TABLES.sites)
+  const sitesByProject = useMemo(() => {
+    const siteById = new Map(sites.map(s => [s.id, s]))
+    const map = new Map<string, Site[]>()
+    for (const ps of projectSites) {
+      const site = siteById.get(ps.siteId)
+      if (!site) continue
+      const list = map.get(ps.projectId) ?? []
+      list.push(site)
+      map.set(ps.projectId, list)
+    }
+    for (const list of map.values()) list.sort((a, b) => a.siteId.localeCompare(b.siteId))
+    return map
+  }, [projectSites, sites])
+
+  // Program-level view: sum BAC/PV/EV/AC across each customer's sites and
+  // re-derive the EVM metrics from the totals.
+  const rollups = useMemo(() => rollupCustomerEVM(evmList), [evmList])
+
+  // Append the record's current state to `history` so the S-curve / variance
+  // charts accumulate over time instead of showing a single flat point.
+  const saveSnapshot = async () => {
+    if (!selected?.id) return
+    setSnapshotMsg(null)
+    setActionError(null)
+    try {
+      const date = selected.dataDate || new Date().toISOString().slice(0, 10)
+      const next = appendSnapshot(selected.history ?? [], {
+        date, pv: selected.pv ?? 0, ev: selected.ev ?? 0, ac: selected.ac ?? 0,
+      })
+      const row = await update(selected.id, { history: next })
+      setSelected(row)
+      setSnapshotMsg(`Snapshot saved for ${date} — ${next.length} point${next.length === 1 ? '' : 's'} on the S-curve.`)
+    } catch (err: any) {
+      setActionError(err.message ?? String(err))
+    }
+  }
 
   const handleDelete = async (e: EVMMetrics) => {
     if (!confirm('Delete this EVM record?')) return
@@ -90,6 +151,9 @@ export function EVMModule() {
   if (loading) return <p className="text-xs text-slate-500">Loading…</p>
   if (error) return <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{error}</div>
 
+  const selSites = sitesByProject.get(selected?.projectId ?? '') ?? []
+  const snapCount = selected?.history?.length ?? 0
+
   // Charts fall back to the current snapshot when no history series exists,
   // so a fresh record still renders the S-curve and variance charts.
   const history = selected?.history ?? []
@@ -112,7 +176,7 @@ export function EVMModule() {
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm text-slate-500">Enter BAC / PV / EV / AC — CPI, SPI, SV, CV, EAC, ETC, VAC, TCPI are computed automatically.</p>
+          <p className="text-sm text-slate-500">One record per site-installation (its project). Enter BAC / PV / EV / AC — CPI, SPI, SV, CV, EAC, ETC, VAC, TCPI are computed automatically. As the site progresses, edit the record and <strong>Save snapshot</strong> to build the S-curve over time; the Customer Rollup below sums all of a customer's sites.</p>
         </div>
         <Button icon={<Plus className="w-4 h-4" />} onClick={openCreate}>New EVM Record</Button>
       </div>
@@ -136,8 +200,9 @@ export function EVMModule() {
                 <button onClick={() => handleDelete(e)} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
             </div>
-            <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug mb-3">{e.projectName}</p>
-            <div className="grid grid-cols-3 gap-2 text-center">
+            <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug">{e.projectName}</p>
+            <SiteList sites={sitesByProject.get(e.projectId ?? '') ?? []} limit={2} />
+            <div className="grid grid-cols-3 gap-2 text-center mt-2">
               <div>
                 <p className="text-xs text-slate-400">CPI</p>
                 <p className={clsx('text-lg font-black', (e.cpi ?? 0) >= 1 ? 'text-green-600' : 'text-red-600')}>{(e.cpi ?? 0).toFixed(2)}</p>
@@ -159,13 +224,78 @@ export function EVMModule() {
         ))}
       </div>
 
+      {/* Customer rollup — program-level EVM across all of a customer's sites */}
+      {rollups.length > 0 && (
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="section-title">Customer Rollup</h3>
+            <p className="text-xs text-slate-400">Program-level EVM — all sites of each customer combined (one EVM record per site-installation)</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-3">
+            {rollups.map(r => (
+              <Card key={r.customerName} padding={false} className="p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm font-bold text-slate-900 dark:text-white">{r.customerName}</p>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300">
+                    {r.siteCount} site{r.siteCount === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-center mt-3">
+                  <div>
+                    <p className="text-xs text-slate-400">CPI</p>
+                    <p className={clsx('text-lg font-black', r.cpi >= 1 ? 'text-green-600' : 'text-red-600')}>{r.cpi.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">SPI</p>
+                    <p className={clsx('text-lg font-black', r.spi >= 1 ? 'text-green-600' : 'text-amber-600')}>{r.spi.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-slate-400">Done</p>
+                    <p className="text-lg font-black text-slate-900 dark:text-white">{Math.round(r.percentComplete)}%</p>
+                  </div>
+                </div>
+                <div className="mt-3 w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5">
+                  <div className={clsx('h-1.5 rounded-full', r.percentComplete > 80 ? 'bg-green-500' : 'bg-brand-500')}
+                    style={{ width: `${Math.min(100, r.percentComplete)}%` }} />
+                </div>
+                <div className="mt-3 space-y-1">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">BAC</span><span className="font-bold">{fmt(r.bac)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">PV / EV / AC</span><span className="font-bold">{fmt(r.pv)} / {fmt(r.ev)} / {fmt(r.ac)}</span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">SV / CV</span>
+                    <span className="font-bold"><span className={r.sv >= 0 ? 'text-green-600' : 'text-red-600'}>{fmt(r.sv)}</span> / <span className={r.cv >= 0 ? 'text-green-600' : 'text-red-600'}>{fmt(r.cv)}</span></span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-slate-400">EAC / VAC</span>
+                    <span className="font-bold">{fmt(r.eac)} / <span className={r.vac >= 0 ? 'text-green-600' : 'text-red-600'}>{fmt(r.vac)}</span></span>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Selected Project EVM Detail */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Left: Metrics */}
         <div className="space-y-4">
           <Card className="p-4">
             <p className="section-title mb-1">{selected.projectName}</p>
-            <p className="text-xs text-slate-500 mb-4">Data Date: <strong>{selected.dataDate}</strong></p>
+            <SiteList sites={selSites} />
+            <div className="flex items-center justify-between gap-2 mt-1 mb-4">
+              <p className="text-xs text-slate-500">Data Date: <strong>{selected.dataDate}</strong></p>
+              <button onClick={saveSnapshot} disabled={!selected.id}
+                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed">
+                <Camera className="w-3.5 h-3.5" /> Save snapshot
+              </button>
+            </div>
+            {snapshotMsg && <p className="text-xs text-green-600 dark:text-green-400 mb-3">{snapshotMsg}</p>}
+            {snapCount > 0 && <p className="text-xs text-slate-400 mb-3">📈 {snapCount} snapshot{snapCount === 1 ? '' : 's'} recorded — S-curve &amp; variance charts plot the trend.</p>}
 
             {/* CPI / SPI / TCPI gauges */}
             <div className="grid grid-cols-3 gap-2 mb-4">

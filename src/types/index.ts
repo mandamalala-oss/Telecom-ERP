@@ -122,12 +122,20 @@ export interface PhaseDetail {
   completionPct: number;
 }
 
+export interface ProjectSite {
+  id?: string;
+  projectId: string;
+  siteId: string;
+  createdAt?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
   customerId: string;
   customerName: string;
-  siteId?: string;
+  /** View-model enrichment: linked site ids (from project_sites), NOT a column. */
+  siteIds?: string[];
   status: ProjectStatus;
   currentPhase: ProjectPhase;
   phases: PhaseDetail[];

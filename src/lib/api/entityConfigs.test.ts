@@ -9,7 +9,7 @@ import { toSnake } from './case'
 // every form field must map to a real schema column (snake_case).
 const schemaPath = fileURLToPath(new URL('../../../database/schema.sql', import.meta.url))
 
-const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'select', 'checkbox', 'tags']
+const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'select', 'checkbox', 'tags', 'multiSelect']
 
 /** Parse `database/schema.sql` into { tableName: Set<columnName> }. */
 function parseSchema(): Record<string, Set<string>> {
@@ -32,7 +32,7 @@ const tableNames = Object.values(TABLES)
 const schema = parseSchema()
 
 describe('FIELD_CONFIGS ↔ database/schema.sql', () => {
-  it('schema defines exactly the 30 app tables', () => {
+  it('schema defines exactly the 31 app tables', () => {
     expect(Object.keys(schema).length).toBe(tableNames.length)
   })
 
@@ -66,6 +66,9 @@ describe('FIELD_CONFIGS ↔ database/schema.sql', () => {
       const cols = schema[t]
       expect(cols).toBeDefined()
       for (const f of FIELD_CONFIGS[t]) {
+        // Virtual fields (e.g. multiSelect site links) are handled as side
+        // effects and never touch the table row — no column required.
+        if (f.virtual) continue
         expect(
           cols.has(toSnake(f.key)),
           `config ${t}.${f.key} → column "${toSnake(f.key)}" does not exist in schema table "${t}"`

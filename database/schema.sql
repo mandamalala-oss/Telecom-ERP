@@ -121,7 +121,6 @@ create table projects (
   name          text not null,
   customer_id   uuid,
   customer_name text,
-  site_id       uuid,
   status        text not null default 'not_started' check (status in ('not_started','in_progress','on_hold','completed','cancelled')),
   current_phase text default 'survey' check (current_phase in ('survey','installation','integration','atp','acceptance')),
   phases        jsonb default '[]',
@@ -135,6 +134,15 @@ create table projects (
   progress      smallint default 0,
   region        text,
   created_at    timestamptz default now()
+);
+
+-- Junction: one project covers many sites (a multi-site engagement).
+-- A site can also appear in several projects over time. See 009.
+create table project_sites (
+  project_id uuid not null references projects(id) on delete cascade,
+  site_id    uuid not null references sites(id)    on delete cascade,
+  created_at timestamptz default now(),
+  primary key (project_id, site_id)
 );
 
 -- ─── TASKS ──────────────────────────────────────────────────────

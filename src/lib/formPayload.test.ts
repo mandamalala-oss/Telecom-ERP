@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildPayload } from './formPayload'
+import { buildPayload, stripVirtualFields } from './formPayload'
 import type { FieldConfig } from '@/components/crud/EntityFormModal'
 
 const f = (partial: Partial<FieldConfig> & { key: string }): FieldConfig => ({ label: partial.key, type: 'text', ...partial })
@@ -66,5 +66,53 @@ describe('buildPayload — tags, dates, passthrough', () => {
       values
     )
     expect(payload).toEqual(values)
+  })
+})
+
+describe('buildPayload — multiSelect', () => {
+  it('keeps the selected keys as an array', () => {
+    const { payload, error } = buildPayload(
+      [f({ key: 'siteIds', type: 'multiSelect' })],
+      { siteIds: ['s1', 's2'] }
+    )
+    expect(error).toBeNull()
+    expect(payload.siteIds).toEqual(['s1', 's2'])
+  })
+
+  it('coerces a non-array value to an empty array', () => {
+    const { payload } = buildPayload([f({ key: 'siteIds', type: 'multiSelect' })], { siteIds: undefined })
+    expect(payload.siteIds).toEqual([])
+  })
+
+  it('copies the array instead of aliasing the input', () => {
+    const raw = ['s1']
+    const { payload } = buildPayload([f({ key: 'siteIds', type: 'multiSelect' })], { siteIds: raw })
+    raw.push('s2')
+    expect(payload.siteIds).toEqual(['s1'])
+  })
+})
+
+describe('stripVirtualFields', () => {
+  const fields = [
+    f({ key: 'name', type: 'text' }),
+    f({ key: 'siteIds', type: 'multiSelect', virtual: true }),
+    f({ key: 'status', type: 'select' }),
+  ]
+
+  it('removes virtual keys from the payload, keeping everything else', () => {
+    const out = stripVirtualFields({ name: 'STARLINK', siteIds: ['s1', 's2'], status: 'in_progress' }, fields)
+    expect(out).toEqual({ name: 'STARLINK', status: 'in_progress' })
+  })
+
+  it('does not mutate the input payload', () => {
+    const input = { name: 'X', siteIds: ['s1'] }
+    const out = stripVirtualFields(input, fields)
+    expect(input.siteIds).toEqual(['s1'])
+    expect(out).not.toBe(input)
+  })
+
+  it('returns the payload untouched when no field is virtual', () => {
+    const out = stripVirtualFields({ name: 'X' }, [f({ key: 'name', type: 'text' })])
+    expect(out).toEqual({ name: 'X' })
   })
 })

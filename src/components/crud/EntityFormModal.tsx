@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { makeApi } from '@/lib/api/crud'
 import { buildPayload } from '@/lib/formPayload'
 
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags'
+export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect'
 
 export interface LookupConfig {
   /** Table to load options from (TABLES value, e.g. 'sites'). */
@@ -28,6 +28,13 @@ export interface FieldConfig {
   type: FieldType
   options?: string[]
   required?: boolean
+  /**
+   * Rendered in the form but EXCLUDED from the create/update payload
+   * (useEntityCrud strips it before insert/update). Use for fields that
+   * are handled as side effects — e.g. multiSelect site links that write
+   * to a junction table via onCreated/onUpdated.
+   */
+  virtual?: boolean
   placeholder?: string
   /** Turns the field into a reference dropdown backed by another table. */
   lookup?: LookupConfig
@@ -152,7 +159,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
       <form id="entity-form" onSubmit={handleSubmit} noValidate>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {fields.map((f) => (
-            <div key={f.key} className={f.type === 'textarea' ? 'sm:col-span-2' : ''}>
+            <div key={f.key} className={f.type === 'textarea' || f.type === 'multiSelect' ? 'sm:col-span-2' : ''}>
               {f.type === 'select' ? (
                 f.lookup ? (
                   <Select label={f.label} value={values[f.key] ?? ''} onChange={(e) => handleLookupChange(f, e.target.value)}>
@@ -176,6 +183,28 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                   <input type="checkbox" checked={!!values[f.key]} onChange={(e) => set(f.key, e.target.checked)} />
                   {f.label}
                 </label>
+              ) : f.type === 'multiSelect' ? (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-1 max-h-52 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 p-2">
+                    {(lookupOptions[f.lookup!.table] ?? []).map((row) => {
+                      const v = row[f.lookup!.valueKey]
+                      const checked = (values[f.key] ?? []).includes(v)
+                      return (
+                        <label key={v} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer rounded px-1.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => set(f.key, checked
+                              ? (values[f.key] ?? []).filter((x: string) => x !== v)
+                              : [...(values[f.key] ?? []), v])}
+                          />
+                          {lookupLabel(f, row)}
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
               ) : f.type === 'tags' ? (
                 <Input label={`${f.label} (comma separated)`} value={values[f.key] ?? ''} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder} />
               ) : (
@@ -201,6 +230,7 @@ function buildInitial(fields: FieldConfig[], initial?: Record<string, any>) {
   for (const f of fields) {
     const v = initial?.[f.key]
     if (f.type === 'tags') out[f.key] = Array.isArray(v) ? v.join(', ') : (v ?? '')
+    else if (f.type === 'multiSelect') out[f.key] = Array.isArray(v) ? [...v] : []
     else if (f.type === 'date' && typeof v === 'string') out[f.key] = v.slice(0, 10)
     else out[f.key] = v ?? (f.type === 'checkbox' ? false : '')
   }

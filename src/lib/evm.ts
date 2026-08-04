@@ -27,3 +27,85 @@ export function deriveEVM(bac: number, pv: number, ev: number, ac: number): Deri
   const tcpi = remainingBudget !== 0 ? (bac - ev) / remainingBudget : 0
   return { cpi, spi, sv, cv, eac, etc, vac, tcpi }
 }
+
+// ─── History snapshots ───────────────────────────────────────────────────────
+
+export interface EVMSnapshot {
+  date: string;
+  pv: number;
+  ev: number;
+  ac: number;
+}
+
+/**
+ * Append a time-series snapshot to a record's `history` (JSONB array).
+ * Pure + unit-tested. One snapshot per date — re-saving the same date
+ * replaces that point (idempotent, lets you correct a mis-entry). Points
+ * are kept in chronological order and the list is capped so the JSONB
+ * column can't grow unboundedly.
+ */
+export function appendSnapshot(
+  history: EVMSnapshot[],
+  snapshot: EVMSnapshot,
+  maxPoints = 100
+): EVMSnapshot[] {
+  const next = [...history.filter(h => h.date !== snapshot.date), snapshot]
+  next.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
+  return next.length > maxPoints ? next.slice(next.length - maxPoints) : next
+}
+
+// ─── Customer rollup (program-level EVM) ─────────────────────────────────────
+
+export interface EVMRollupInput {
+  customerName?: string | null;
+  bac: number;
+  pv: number;
+  ev: number;
+  ac: number;
+}
+
+export interface EVMCustomerRollup extends DerivedEVM {
+  customerName: string;
+  siteCount: number;      // number of per-site EVM records grouped here
+  bac: number;
+  pv: number;
+  ev: number;
+  ac: number;
+  percentComplete: number; // ΣEV / ΣBAC × 100
+}
+
+/**
+ * Aggregate the per-site EVM records of a customer into one program-level
+ * picture: BAC/PV/EV/AC are summed, then the standard metrics are re-derived
+ * from the totals (EVM is linear in these inputs, so summing is correct).
+ * Pure + unit-tested; used by the EVM module's customer rollup view.
+ * Records without a customer name group under '—'.
+ */
+export function rollupCustomerEVM(records: EVMRollupInput[]): EVMCustomerRollup[] {
+  const acc = new Map<string, EVMCustomerRollup>()
+  for (const r of records) {
+    const name = (r.customerName ?? '').trim() || '—'
+    let rollup = acc.get(name)
+    if (!rollup) {
+      rollup = {
+        customerName: name, siteCount: 0,
+        bac: 0, pv: 0, ev: 0, ac: 0,
+        percentComplete: 0,
+        cpi: 0, spi: 0, sv: 0, cv: 0, eac: 0, etc: 0, vac: 0, tcpi: 0,
+      }
+      acc.set(name, rollup)
+    }
+    rollup.siteCount += 1
+    rollup.bac += r.bac ?? 0
+    rollup.pv += r.pv ?? 0
+    rollup.ev += r.ev ?? 0
+    rollup.ac += r.ac ?? 0
+  }
+  const result = [...acc.values()]
+  for (const rollup of result) {
+    Object.assign(rollup, deriveEVM(rollup.bac, rollup.pv, rollup.ev, rollup.ac))
+    rollup.percentComplete = rollup.bac > 0 ? (rollup.ev / rollup.bac) * 100 : 0
+  }
+  result.sort((a, b) => b.bac - a.bac)
+  return result
+}

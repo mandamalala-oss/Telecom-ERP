@@ -154,3 +154,54 @@ describe('EntityFormModal — lookup auto-population', () => {
     expect(onSubmit.mock.calls[0][0]).toMatchObject({ siteCode: 'MDG-001', siteName: 'Site Alpha', latitude: -18.9 })
   })
 })
+
+describe('EntityFormModal — multiSelect', () => {
+  const multiFields: FieldConfig[] = [
+    {
+      key: 'siteIds',
+      label: 'Sites',
+      type: 'multiSelect',
+      virtual: true,
+      lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId' },
+    },
+    { key: 'name', label: 'Name', type: 'text' },
+  ]
+
+  it('renders one checkbox per lookup row with the formatted label', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => siteRows })
+    renderForm(multiFields)
+    expect(await screen.findByRole('checkbox', { name: 'MDG-001 — Site Alpha' })).toBeTruthy()
+    expect(screen.getByRole('checkbox', { name: 'MDG-002 — Site Beta' })).toBeTruthy()
+  })
+
+  it('collects toggled selections into a string[] in the payload', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => siteRows })
+    const onSubmit = renderForm(multiFields)
+    await userEvent.type(screen.getByLabelText('Name'), 'STARLINK')
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'MDG-001 — Site Alpha' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'MDG-002 — Site Beta' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ name: 'STARLINK', siteIds: ['s1', 's2'] })
+  })
+
+  it('pre-checks boxes from the initial value (edit flow)', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => siteRows })
+    renderForm(multiFields, { siteIds: ['s2'] })
+    const alpha = await screen.findByRole('checkbox', { name: 'MDG-001 — Site Alpha' })
+    const beta = screen.getByRole('checkbox', { name: 'MDG-002 — Site Beta' })
+    expect((alpha as HTMLInputElement).checked).toBe(false)
+    expect((beta as HTMLInputElement).checked).toBe(true)
+  })
+
+  it('unchecks a selected box on second click', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => siteRows })
+    const onSubmit = renderForm(multiFields, { siteIds: ['s1', 's2'] })
+    const alpha = await screen.findByRole('checkbox', { name: 'MDG-001 — Site Alpha' })
+    await userEvent.click(alpha)
+    await userEvent.type(screen.getByLabelText('Name'), 'X')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ siteIds: ['s2'] })
+  })
+})

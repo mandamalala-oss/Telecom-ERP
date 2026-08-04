@@ -26,6 +26,11 @@ export function buildPayload(
         .split(',')
         .map((s: string) => s.trim())
         .filter(Boolean)
+    } else if (f.type === 'multiSelect') {
+      // Kept as an array of selected keys. Virtual multiSelects are stripped
+      // before the table insert/update (see stripVirtualFields below) and
+      // handled as side effects (e.g. junction rows) by the module's hooks.
+      payload[f.key] = Array.isArray(values[f.key]) ? [...values[f.key]] : []
     } else if (f.type === 'number') {
       const v = values[f.key]
       if (v === '' || v === undefined || v === null) {
@@ -44,4 +49,21 @@ export function buildPayload(
     }
   }
   return { payload, error: null }
+}
+
+/**
+ * Remove `virtual` fields from a save payload. Virtual fields are rendered in
+ * the form but don't map to table columns — the module handles them as side
+ * effects (e.g. a multiSelect of site links that writes junction rows via
+ * onCreated/onUpdated). Pure + unit-tested; used by useEntityCrud.
+ */
+export function stripVirtualFields(
+  payload: Record<string, any>,
+  fields: FieldConfig[]
+): Record<string, any> {
+  const virtual = new Set(fields.filter((f) => f.virtual).map((f) => f.key))
+  if (virtual.size === 0) return payload
+  const out: Record<string, any> = { ...payload }
+  for (const k of virtual) delete out[k]
+  return out
 }

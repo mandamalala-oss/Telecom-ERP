@@ -9,6 +9,7 @@ export const TABLES = {
   contacts: 'contacts',
   sites: 'sites',
   projects: 'projects',
+  projectSites: 'project_sites',
   tasks: 'tasks',
   warehouses: 'warehouses',
   inventoryItems: 'inventory_items',
@@ -97,7 +98,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   ],
   projects: [
     { key: 'name', label: 'Name', type: 'text', required: true },
-    { key: 'siteId', label: 'Site', type: 'select', lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId' } },
+    { key: 'siteIds', label: 'Sites', type: 'multiSelect', virtual: true, lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId' } },
     { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { customerId: 'id' } } },
     { key: 'status', label: 'Status', type: 'select', options: ['not_started', 'in_progress', 'on_hold', 'completed', 'cancelled'] },
     { key: 'currentPhase', label: 'Current Phase', type: 'select', options: ['survey', 'installation', 'integration', 'atp', 'acceptance'] },
@@ -109,6 +110,12 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'pm', label: 'Project Manager', type: 'text' },
     { key: 'progress', label: 'Progress %', type: 'number' },
     { key: 'region', label: 'Region', type: 'select', options: REGIONS },
+  ],
+  // Junction table — internal only (no module in the sidebar). Config exists
+  // so the schema↔config invariant holds and lookups can reference it.
+  project_sites: [
+    { key: 'projectId', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name' } },
+    { key: 'siteId', label: 'Site', type: 'select', lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}' } },
   ],
   tasks: [
     { key: 'title', label: 'Title', type: 'text', required: true },

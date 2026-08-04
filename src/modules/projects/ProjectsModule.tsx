@@ -8,7 +8,8 @@ import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
 import { TABLES } from '@/lib/api/entityConfigs'
 import { projectFinance } from '@/lib/projectFinance'
-import type { Project, PhaseDetail, Site } from '@/types'
+import { supabase } from '@/lib/supabase'
+import type { Project, PhaseDetail, ProjectSite, Site } from '@/types'
 
 const fmt = (n: number | null | undefined) => {
   const v = n ?? 0
@@ -71,8 +72,28 @@ function PhaseTimeline({ phases, currentPhase, progress }: { phases: PhaseDetail
 }
 
 export function ProjectsModule() {
-  const { data: projects, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<Project>(TABLES.projects, 'Project')
   const { data: sites } = useEntity<Site>(TABLES.sites)
+  const { data: projectSites, refresh: refreshProjectSites } = useEntity<ProjectSite>(TABLES.projectSites)
+
+  // Keep the junction table in sync when the form's site selection changes.
+  // `values` carries the virtual `siteIds` multiSelect (stripped from the
+  // projects row itself); we rewrite the project_sites rows here, on both
+  // create and edit.
+  const syncSites = async (row: Project, values: Record<string, any>) => {
+    const siteIds: string[] = Array.isArray(values.siteIds) ? values.siteIds : []
+    const { error: del } = await supabase.from('project_sites').delete().eq('project_id', row.id)
+    if (del) throw del
+    if (siteIds.length > 0) {
+      const rows = [...new Set(siteIds)].map((siteId) => ({ project_id: row.id, site_id: siteId }))
+      const { error: ins } = await supabase.from('project_sites').insert(rows)
+      if (ins) throw ins
+    }
+    await refreshProjectSites()
+  }
+
+  const { data: projects, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<Project>(
+    TABLES.projects, 'Project', undefined, syncSites, undefined, syncSites
+  )
   const [selected, setSelected] = useState<Project | null>(null)
   const [filterStatus, setFilterStatus] = useState('all')
   const [actionError, setActionError] = useState<string | null>(null)
@@ -84,9 +105,22 @@ export function ProjectsModule() {
   const totalRevenue = projects.reduce((s, p) => s + (p.revenue ?? 0), 0)
   const totalProfit  = projects.reduce((s, p) => s + ((p.revenue ?? 0) - (p.spent ?? 0)), 0)
 
-  // A project links to exactly one saved site (siteId) chosen in the form.
-  const siteById = useMemo(() => new Map(sites.map(s => [s.id, s])), [sites])
-  const selSite = selected ? siteById.get(selected.siteId ?? '') : undefined
+  // A project covers one or more sites (project_sites junction) — resolve
+  // them all per project.
+  const sitesByProject = useMemo(() => {
+    const siteById = new Map(sites.map(s => [s.id, s]))
+    const map = new Map<string, Site[]>()
+    for (const ps of projectSites) {
+      const site = siteById.get(ps.siteId)
+      if (!site) continue
+      const list = map.get(ps.projectId) ?? []
+      list.push(site)
+      map.set(ps.projectId, list)
+    }
+    for (const list of map.values()) list.sort((a, b) => a.siteId.localeCompare(b.siteId))
+    return map
+  }, [projectSites, sites])
+  const selSites = selected ? sitesByProject.get(selected.id ?? '') ?? [] : []
   const selFin = projectFinance(selected?.budget, selected?.spent, selected?.revenue)
 
   const handleDelete = async (id: string) => {
@@ -140,7 +174,7 @@ export function ProjectsModule() {
         {filtered.map(p => {
           const budgetPct = (p.budget ?? 0) > 0 ? Math.round(((p.spent ?? 0) / (p.budget ?? 0)) * 100) : 0
           const overBudget = budgetPct > 100 || ((p.budget ?? 0) === 0 && (p.spent ?? 0) > 0)
-          const site = siteById.get(p.siteId ?? '')
+          const sites = sitesByProject.get(p.id ?? '') ?? []
           const fin = projectFinance(p.budget, p.spent, p.revenue)
           return (
             <Card key={p.id} hover padding={false} onClick={() => setSelected(p)}>
@@ -152,7 +186,7 @@ export function ProjectsModule() {
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-bold text-slate-900 dark:text-white">{p.name}</h3>
                           <Badge status={p.status} />
-                          <span className="text-xs font-mono text-slate-400">{site?.siteId ?? '—'}</span>
+                          <span className="text-xs font-mono text-slate-400">{sites.length > 0 ? sites.map(s => s.siteId).join(', ') : '—'}</span>
                         </div>
                         <p className="text-sm text-slate-500 mt-0.5">{p.customerName} · {p.region}</p>
                       </div>
@@ -179,8 +213,8 @@ export function ProjectsModule() {
                       <p className="text-sm font-bold text-green-600">{fmt(p.revenue)}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-xs text-slate-400">Site</p>
-                      <p className="text-sm font-bold text-slate-900 dark:text-white truncate max-w-[100px]">{site?.siteId ?? '—'}</p>
+                      <p className="text-xs text-slate-400">Sites</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white">{sites.length}</p>
                     </div>
                   </div>
                 </div>
@@ -216,13 +250,13 @@ export function ProjectsModule() {
           footer={
             <div className="flex justify-end gap-2">
               <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDelete(selected.id!)}>Delete</Button>
-              <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { openEdit(selected); setSelected(null) }}>Edit</Button>
+              <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { openEdit({ ...selected, siteIds: selSites.map(s => s.id) }); setSelected(null) }}>Edit</Button>
             </div>
           }>
           <div className="space-y-5">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { l: 'Site',      v: selSite ? `${selSite.siteId} — ${selSite.name}` : '—' },
+                { l: 'Sites',     v: selSites.length > 0 ? selSites.map(s => `${s.siteId} — ${s.name}`).join(' · ') : '—' },
                 { l: 'Customer',  v: selected.customerName },
                 { l: 'Region',    v: selected.region },
                 { l: 'PM',        v: selected.pm },
@@ -241,17 +275,21 @@ export function ProjectsModule() {
               ))}
             </div>
             <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Site Revenue</p>
-              {selSite ? (
-                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">{selSite.name}</p>
-                    <p className="text-xs text-slate-500 font-mono">{selSite.siteId}</p>
-                  </div>
-                  <p className="text-sm font-bold text-green-600">{fmt(selSite.revenue)}</p>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Linked Sites ({selSites.length})</p>
+              {selSites.length > 0 ? (
+                <div className="space-y-2">
+                  {selSites.map(s => (
+                    <div key={s.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{s.name}</p>
+                        <p className="text-xs text-slate-500 font-mono">{s.siteId} · {s.status}</p>
+                      </div>
+                      <p className="text-sm font-bold text-green-600">{fmt(s.revenue)}</p>
+                    </div>
+                  ))}
                 </div>
               ) : (
-                <p className="text-sm text-slate-400">No site linked to this project yet — pick one in the Edit form.</p>
+                <p className="text-sm text-slate-400">No sites linked to this project yet — pick them in the Edit form.</p>
               )}
             </div>
             <div>
