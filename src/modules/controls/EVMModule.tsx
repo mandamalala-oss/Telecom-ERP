@@ -10,7 +10,7 @@ import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
 import {
   appendSnapshot, combineEVMRecords, deriveEVM, evFromProgress,
-  groupEVMByProject, mergeHistories, rollupCustomerEVM, wouldLeaveGroupEmpty,
+  groupEVMByProject, mergeHistories, rollupCustomerEVM,
   type EVMSiteRecord,
 } from '@/lib/evm'
 import { TABLES } from '@/lib/api/entityConfigs'
@@ -156,35 +156,38 @@ export function EVMModule() {
   }), [evmList, sitesByProject])
 
   // Site filter: hiddenSiteIds holds the recordIds of excluded sites.
-  // Default = all sites selected (empty set = nothing hidden).
+  // Default = all sites selected (empty set = nothing hidden). The group
+  // cards are built from ALL sites so an unchecked site STAYS listed
+  // (greyed out) and can be re-checked without a refresh.
   const visibleRecords = useMemo(
     () => siteRecords.filter(r => !hiddenSiteIds.has(r.recordId)),
     [siteRecords, hiddenSiteIds]
   )
-  const groups = useMemo(
-    () => groupEVMByProject(visibleRecords).filter(g => g.records.length > 0),
-    [visibleRecords]
-  )
-  const combinedByGroup = useMemo(
-    () => new Map(groups.map(g => [g.key, combineEVMRecords(g.records)])),
-    [groups]
-  )
+  const allGroups = useMemo(() => groupEVMByProject(siteRecords), [siteRecords])
   const rollups = useMemo(() => rollupCustomerEVM(visibleRecords), [visibleRecords])
 
-  const selectedGroup = groups.find(g => g.key === selectedGroupKey) ?? groups[0] ?? null
+  // Combined metrics per group use ONLY the checked sites (0 checked = zeros).
+  const visibleByGroup = useMemo(() => {
+    const map = new Map<string, EVMSiteRecord[]>()
+    for (const g of allGroups) map.set(g.key, g.records.filter(r => !hiddenSiteIds.has(r.recordId)))
+    return map
+  }, [allGroups, hiddenSiteIds])
+  const combinedByGroup = useMemo(
+    () => new Map(allGroups.map(g => [g.key, combineEVMRecords(visibleByGroup.get(g.key) ?? [])])),
+    [allGroups, visibleByGroup]
+  )
+
+  const selectedGroup = allGroups.find(g => g.key === selectedGroupKey) ?? allGroups[0] ?? null
   const combined = selectedGroup ? combinedByGroup.get(selectedGroup.key) : undefined
+  const selectedVisible = selectedGroup ? visibleByGroup.get(selectedGroup.key) ?? [] : []
 
   useEffect(() => {
-    if (groups.length === 0) { setSelectedGroupKey(null); return }
-    if (!selectedGroupKey || !groups.some(g => g.key === selectedGroupKey)) setSelectedGroupKey(groups[0].key)
-  }, [groups, selectedGroupKey])
+    if (allGroups.length === 0) { setSelectedGroupKey(null); return }
+    if (!selectedGroupKey || !allGroups.some(g => g.key === selectedGroupKey)) setSelectedGroupKey(allGroups[0].key)
+  }, [allGroups, selectedGroupKey])
 
   const toggleSite = (recordId: string) => {
     setHiddenSiteIds(prev => {
-      // At least one site per group must stay visible — unchecking the last
-      // checked site of a group is ignored.
-      const group = groups.find(g => g.records.some(r => r.recordId === recordId))
-      if (group && !prev.has(recordId) && wouldLeaveGroupEmpty(prev, group.records, recordId)) return prev
       const next = new Set(prev)
       if (next.has(recordId)) next.delete(recordId); else next.add(recordId)
       return next
@@ -228,11 +231,11 @@ export function EVMModule() {
   if (loading) return <p className="text-xs text-slate-500">Loading…</p>
   if (error) return <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{error}</div>
 
-  // Charts: merged history across the group's (visible) sites; fall back to
+  // Charts: merged history across the group's CHECKED sites; fall back to
   // the summed current snapshot when no snapshots exist yet.
-  const history = selectedGroup ? mergeHistories(selectedGroup.records) : []
-  const snapshotDate = selectedGroup
-    ? (selectedGroup.records.map(r => r.dataDate).filter(Boolean).sort().pop() ?? 'now')
+  const history = selectedGroup ? mergeHistories(selectedVisible) : []
+  const snapshotDate = selectedVisible.length > 0
+    ? (selectedVisible.map(r => r.dataDate).filter(Boolean).sort().pop() ?? 'now')
     : 'now'
   const cur = combined ?? { pv: 0, ev: 0, ac: 0, cpi: 0, spi: 0, tcpi: 0, vac: 0, po: 0, bac: 0, sv: 0, cv: 0, eac: 0, etc: 0, benefit: 0, percentComplete: 0 }
   const trendData = history.length > 0
@@ -242,10 +245,12 @@ export function EVMModule() {
     ? history.map(h => ({ date: h.date, SV: ((h.ev ?? 0) - (h.pv ?? 0)) / 1e6, CV: ((h.ev ?? 0) - (h.ac ?? 0)) / 1e6 }))
     : [{ date: snapshotDate, SV: (cur.ev - cur.pv) / 1e6, CV: (cur.ev - cur.ac) / 1e6 }]
 
-  const summaryData = groups.map(g => {
-    const c = combinedByGroup.get(g.key)!
-    return { name: g.projectName.split(' ').slice(0, 3).join(' '), CPI: c.cpi ?? 0, SPI: c.spi ?? 0 }
-  })
+  const summaryData = allGroups
+    .filter(g => (visibleByGroup.get(g.key) ?? []).length > 0)
+    .map(g => {
+      const c = combinedByGroup.get(g.key)!
+      return { name: g.projectName.split(' ').slice(0, 3).join(' '), CPI: c.cpi ?? 0, SPI: c.spi ?? 0 }
+    })
 
   return (
     <div className="space-y-6">
@@ -260,18 +265,17 @@ export function EVMModule() {
       {snapshotMsg && <p className="text-xs text-green-600 dark:text-green-400">{snapshotMsg}</p>}
       {hiddenSiteIds.size > 0 && <p className="text-xs text-slate-400">🔍 {hiddenSiteIds.size} site(s) excluded — calculations only include the checked sites.</p>}
 
-      {groups.length === 0 ? (
+      {siteRecords.length === 0 ? (
         <p className="text-sm text-slate-500">
-          {siteRecords.length > 0
-            ? 'All sites are excluded — check at least one site checkbox to see EVM data.'
-            : 'No EVM data yet — click “New EVM Record” to add the first cost/schedule snapshot.'}
+          No EVM data yet — click “New EVM Record” to add the first cost/schedule snapshot.
         </p>
       ) : (
         <>
-      {/* Project groups with per-site filter */}
+      {/* Project groups with per-site filter — ALL sites stay listed; unchecked ones are greyed out */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {groups.map(g => {
+        {allGroups.map(g => {
           const c = combinedByGroup.get(g.key)!
+          const visibleCount = (visibleByGroup.get(g.key) ?? []).length
           return (
             <Card key={g.key} hover padding={false}
               onClick={() => setSelectedGroupKey(g.key)}
@@ -279,25 +283,23 @@ export function EVMModule() {
                 ? 'border-brand-500 shadow-md' : 'border-transparent')}>
               <div className="flex items-start justify-between gap-2">
                 <p className="text-xs font-bold text-brand-600 dark:text-brand-400">{g.customerName}</p>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300">{g.records.length} site{g.records.length === 1 ? '' : 's'}</span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300">{visibleCount}/{g.records.length} shown</span>
               </div>
               <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug">{g.projectName}</p>
-              {/* Site filter — per-site checkboxes, default all checked */}
+              {/* Site filter — per-site checkboxes; unchecked sites stay listed and can be re-checked */}
               <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-2" onClick={ev => ev.stopPropagation()}>
                 {g.records.map(r => (
                   <label key={r.recordId}
                     className={clsx('flex items-center gap-1.5 text-xs cursor-pointer',
                       hiddenSiteIds.has(r.recordId) ? 'text-slate-400 line-through' : 'text-slate-600 dark:text-slate-300')}>
-                    <input
-                      type="checkbox"
-                      checked={!hiddenSiteIds.has(r.recordId)}
-                      disabled={!hiddenSiteIds.has(r.recordId) && wouldLeaveGroupEmpty(hiddenSiteIds, g.records, r.recordId)}
-                      onChange={() => toggleSite(r.recordId)}
-                    />
+                    <input type="checkbox" checked={!hiddenSiteIds.has(r.recordId)} onChange={() => toggleSite(r.recordId)} />
                     <span className="font-mono">{r.siteKey}</span>
                   </label>
                 ))}
               </div>
+              {visibleCount === 0 && (
+                <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">No sites selected — check a site to see this project's data.</p>
+              )}
               <div className="grid grid-cols-3 gap-2 text-center mt-2">
                 <div>
                   <p className="text-xs text-slate-400">CPI</p>
@@ -454,7 +456,7 @@ export function EVMModule() {
           <Card padding={false}>
             <div className="px-5 pt-5 pb-2">
               <h3 className="section-title">S-Curve: PV / EV / AC</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Cumulative values over time, all checked sites combined (M Ar)</p>
+              <p className="text-xs text-slate-500 mt-0.5">Cumulative values over time, checked sites combined (M Ar){selectedGroup && (visibleByGroup.get(selectedGroup.key) ?? []).length < selectedGroup.records.length ? ' — some sites excluded' : ''}</p>
             </div>
             <div className="px-2 pb-4">
               <ResponsiveContainer width="100%" height={240}>
