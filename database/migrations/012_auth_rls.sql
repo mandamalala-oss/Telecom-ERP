@@ -80,8 +80,8 @@ create policy "users_read" on public.users
 drop policy if exists "users_write_admin" on public.users;
 create policy "users_write_admin" on public.users
   for all
-  using (auth.uid() in (select u.auth_id from public.users u where u.role = 'admin'))
-  with check (auth.uid() in (select u.auth_id from public.users u where u.role = 'admin'));
+  using (public.app_has_role(array['admin']))
+  with check (public.app_has_role(array['admin']));
 
 -- sites / projects / project_sites / tasks: everyone reads, pm/engineer/admin write.
 alter table public.sites enable row level security;
