@@ -134,8 +134,8 @@ export interface Project {
   name: string;
   customerId: string;
   customerName: string;
-  /** View-model enrichment: linked site ids (from project_sites), NOT a column. */
-  siteIds?: string[];
+  /** View-model enrichment: the linked site id (from project_sites), NOT a column. */
+  siteId?: string;
   status: ProjectStatus;
   currentPhase: ProjectPhase;
   phases: PhaseDetail[];

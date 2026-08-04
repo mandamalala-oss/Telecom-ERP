@@ -8,14 +8,17 @@ import { Card } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
-import { appendSnapshot, deriveEVM, evFromProgress, rollupCustomerEVM } from '@/lib/evm'
+import {
+  appendSnapshot, combineEVMRecords, deriveEVM, evFromProgress,
+  groupEVMByProject, mergeHistories, rollupCustomerEVM,
+  type EVMSiteRecord,
+} from '@/lib/evm'
 import { TABLES } from '@/lib/api/entityConfigs'
 import type { EVMMetrics, ProjectSite, Site } from '@/types'
 import { clsx } from 'clsx'
 
-const fmt    = (n: number | null | undefined) => { const v = n ?? 0; return v >= 1e6 ? `${(v/1e6).toFixed(2)}M Ar` : `${v.toLocaleString()} Ar` }
-const fmtM   = (n: number | null | undefined) => `${((n ?? 0)/1e6).toFixed(1)}M`
-const pct    = (n: number | null | undefined) => `${((n ?? 0)*100).toFixed(1)}%`
+const fmt  = (n: number | null | undefined) => { const v = n ?? 0; return v >= 1e6 ? `${(v/1e6).toFixed(2)}M Ar` : `${v.toLocaleString()} Ar` }
+const pct  = (n: number | null | undefined) => `${((n ?? 0)*100).toFixed(1)}%`
 
 function IndexGauge({ label, value, good = true }: { label: string; value: number | null | undefined; good?: boolean }) {
   const isGood    = good ? (value ?? 0) >= 1 : (value ?? 0) <= 1
@@ -29,22 +32,6 @@ function IndexGauge({ label, value, good = true }: { label: string; value: numbe
       <p className={clsx('text-xs font-semibold mt-1', isGood ? 'text-green-500' : 'text-red-500')}>
         {(value ?? 0) === 1 ? 'On target' : `${isGood ? '+' : '-'}${deviation}% vs baseline`}
       </p>
-    </div>
-  )
-}
-
-function SiteList({ sites, limit = 0 }: { sites: Site[]; limit?: number }) {
-  if (sites.length === 0) return <p className="text-xs font-mono text-slate-400 mt-0.5">— no sites linked —</p>
-  const shown = limit > 0 ? sites.slice(0, limit) : sites
-  const rest = sites.length - shown.length
-  return (
-    <div className="flex flex-wrap gap-1.5 mt-1">
-      {shown.map(s => (
-        <span key={s.id} className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300">
-          {s.siteId} — {s.name}
-        </span>
-      ))}
-      {rest > 0 && <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-600 text-slate-500 dark:text-slate-300">+{rest} more</span>}
     </div>
   )
 }
@@ -67,6 +54,45 @@ function EVMRow({ label, value, subtitle, highlight }: { label: string; value: s
   )
 }
 
+// Per-site EVM row inside a group's detail: one project = one site.
+function SiteRow({ r, onSnapshot, onEdit, onDelete }: {
+  r: EVMSiteRecord
+  onSnapshot: (r: EVMSiteRecord) => void
+  onEdit: (r: EVMSiteRecord) => void
+  onDelete: (r: EVMSiteRecord) => void
+}) {
+  const m = deriveEVM(r.bac, r.pv, r.ev, r.ac)
+  return (
+    <div className="p-3 bg-slate-50 dark:bg-slate-700/30 rounded-lg">
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-slate-900 dark:text-white truncate">{r.siteKey}{r.siteName ? ` — ${r.siteName}` : ''}</p>
+          <p className="text-xs text-slate-500">{r.percentComplete ?? 0}% done · Data date: {r.dataDate ?? '—'}</p>
+        </div>
+        <div className="flex gap-1 flex-shrink-0">
+          <button title="Save snapshot" onClick={() => onSnapshot(r)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Camera className="w-3.5 h-3.5" /></button>
+          <button title="Edit" onClick={() => onEdit(r)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
+          <button title="Delete" onClick={() => onDelete(r)} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-4 gap-2 text-xs text-center">
+        <div><p className="text-slate-400">BAC</p><p className="font-bold">{fmt(r.bac)}</p></div>
+        <div><p className="text-slate-400">EV</p><p className="font-bold">{fmt(r.ev)}</p></div>
+        <div><p className="text-slate-400">AC</p><p className="font-bold">{fmt(r.ac)}</p></div>
+        <div><p className="text-slate-400">Benefit</p><p className={clsx('font-bold', r.po - r.ac >= 0 ? 'text-green-600' : 'text-red-600')}>{fmt(r.po - r.ac)}</p></div>
+      </div>
+      <div className="mt-2 flex items-center gap-3 text-xs">
+        <span>CPI <strong className={m.cpi >= 1 ? 'text-green-600' : 'text-red-600'}>{m.cpi.toFixed(2)}</strong></span>
+        <span>SPI <strong className={m.spi >= 1 ? 'text-green-600' : 'text-amber-600'}>{m.spi.toFixed(2)}</strong></span>
+        <div className="flex-1 bg-slate-200 dark:bg-slate-600 rounded-full h-1.5">
+          <div className={clsx('h-1.5 rounded-full', (r.percentComplete ?? 0) > 80 ? 'bg-green-500' : 'bg-brand-500')}
+            style={{ width: `${Math.min(100, r.percentComplete ?? 0)}%` }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function EVMModule() {
   const { data: evmList, loading, error, openCreate, openEdit, remove, update, modal } = useEntityCrud<EVMMetrics>(
     TABLES.evmMetrics, 'EVM Record', undefined, undefined,
@@ -82,14 +108,12 @@ export function EVMModule() {
       return { ...values, ev, cpi, spi, sv, cv, eac, etc, vac, tcpi }
     }
   )
-  const [selected, setSelected] = useState<EVMMetrics | null>(null)
+  const [selectedGroupKey, setSelectedGroupKey] = useState<string | null>(null)
+  const [hiddenSiteIds, setHiddenSiteIds] = useState<Set<string>>(new Set())
   const [actionError, setActionError] = useState<string | null>(null)
   const [snapshotMsg, setSnapshotMsg] = useState<string | null>(null)
 
-  // A project covers one or more sites (project_sites junction) and EVM is
-  // one record per project — so resolve every site behind the project and
-  // show them as chips: one engagement (project + customer) = one EVM that
-  // lists its sites, like the original multi-site model.
+  // 1 project = 1 site (project_sites junction); resolve the site per project.
   const { data: projectSites } = useEntity<ProjectSite>(TABLES.projectSites)
   const { data: sites } = useEntity<Site>(TABLES.sites)
   const sitesByProject = useMemo(() => {
@@ -106,132 +130,180 @@ export function EVMModule() {
     return map
   }, [projectSites, sites])
 
-  // Program-level view: sum BAC/PV/EV/AC across each customer's sites and
-  // re-derive the EVM metrics from the totals.
-  const rollups = useMemo(() => rollupCustomerEVM(evmList), [evmList])
+  // Decorate each EVM record with its site identity.
+  const siteRecords: EVMSiteRecord[] = useMemo(() => evmList.map(e => {
+    const site = (sitesByProject.get(e.projectId ?? '') ?? [])[0]
+    return {
+      recordId: e.id ?? '',
+      projectName: e.projectName ?? '',
+      customerName: e.customerName,
+      siteKey: site?.siteId ?? e.projectName ?? '—',
+      siteName: site?.name,
+      dataDate: e.dataDate,
+      percentComplete: e.percentComplete ?? 0,
+      history: e.history ?? [],
+      po: e.po ?? 0, bac: e.bac ?? 0, pv: e.pv ?? 0, ev: e.ev ?? 0, ac: e.ac ?? 0,
+    }
+  }), [evmList, sitesByProject])
+
+  // Site filter: hiddenSiteIds holds the recordIds of excluded sites.
+  // Default = all sites selected (empty set = nothing hidden).
+  const visibleRecords = useMemo(
+    () => siteRecords.filter(r => !hiddenSiteIds.has(r.recordId)),
+    [siteRecords, hiddenSiteIds]
+  )
+  const groups = useMemo(
+    () => groupEVMByProject(visibleRecords).filter(g => g.records.length > 0),
+    [visibleRecords]
+  )
+  const combinedByGroup = useMemo(
+    () => new Map(groups.map(g => [g.key, combineEVMRecords(g.records)])),
+    [groups]
+  )
+  const rollups = useMemo(() => rollupCustomerEVM(visibleRecords), [visibleRecords])
+
+  const selectedGroup = groups.find(g => g.key === selectedGroupKey) ?? groups[0] ?? null
+  const combined = selectedGroup ? combinedByGroup.get(selectedGroup.key) : undefined
+
+  useEffect(() => {
+    if (groups.length === 0) { setSelectedGroupKey(null); return }
+    if (!selectedGroupKey || !groups.some(g => g.key === selectedGroupKey)) setSelectedGroupKey(groups[0].key)
+  }, [groups, selectedGroupKey])
+
+  const toggleSite = (recordId: string) => {
+    setHiddenSiteIds(prev => {
+      const next = new Set(prev)
+      if (next.has(recordId)) next.delete(recordId); else next.add(recordId)
+      return next
+    })
+  }
 
   // Append the record's current state to `history` so the S-curve / variance
   // charts accumulate over time instead of showing a single flat point.
-  const saveSnapshot = async () => {
-    if (!selected?.id) return
+  const saveSnapshot = async (r: EVMSiteRecord) => {
+    if (!r.recordId) return
     setSnapshotMsg(null)
     setActionError(null)
     try {
-      const date = selected.dataDate || new Date().toISOString().slice(0, 10)
-      const next = appendSnapshot(selected.history ?? [], {
-        date, pv: selected.pv ?? 0, ev: selected.ev ?? 0, ac: selected.ac ?? 0,
-      })
-      const row = await update(selected.id, { history: next })
-      setSelected(row)
-      setSnapshotMsg(`Snapshot saved for ${date} — ${next.length} point${next.length === 1 ? '' : 's'} on the S-curve.`)
+      const date = r.dataDate || new Date().toISOString().slice(0, 10)
+      const next = appendSnapshot(r.history ?? [], { date, pv: r.pv ?? 0, ev: r.ev ?? 0, ac: r.ac ?? 0 })
+      await update(r.recordId, { history: next })
+      setSnapshotMsg(`Snapshot saved for ${r.siteKey} (${date}) — ${next.length} point${next.length === 1 ? '' : 's'} on the S-curve.`)
     } catch (err: any) {
       setActionError(err.message ?? String(err))
     }
   }
 
-  const handleDelete = async (e: EVMMetrics) => {
-    if (!confirm('Delete this EVM record?')) return
+  const handleEdit = (r: EVMSiteRecord) => {
+    const row = evmList.find(e => e.id === r.recordId)
+    if (row) openEdit(row)
+  }
+
+  const handleDelete = async (r: EVMSiteRecord) => {
+    if (!confirm(`Delete EVM record for ${r.siteKey}?`)) return
     try {
       setActionError(null)
-      await remove(e.id!)
-      if (selected?.projectId === e.projectId) setSelected(null)
+      await remove(r.recordId)
     } catch (err: any) {
       setActionError(err.message ?? String(err))
     }
   }
-
-  useEffect(() => {
-    if (evmList.length === 0) return
-    // Keep the selection in sync: if the selected row disappeared from the
-    // list (deleted, filtered), fall back to the first row instead of
-    // rendering stale metrics forever.
-    if (!selected || !evmList.some(e => e.projectId === selected.projectId)) {
-      setSelected(evmList[0])
-    }
-  }, [evmList, selected])
 
   if (loading) return <p className="text-xs text-slate-500">Loading…</p>
   if (error) return <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{error}</div>
 
-  const selSites = sitesByProject.get(selected?.projectId ?? '') ?? []
-  const snapCount = selected?.history?.length ?? 0
-
-  // Charts fall back to the current snapshot when no history series exists,
-  // so a fresh record still renders the S-curve and variance charts.
-  const history = selected?.history ?? []
+  // Charts: merged history across the group's (visible) sites; fall back to
+  // the summed current snapshot when no snapshots exist yet.
+  const history = selectedGroup ? mergeHistories(selectedGroup.records) : []
+  const snapshotDate = selectedGroup
+    ? (selectedGroup.records.map(r => r.dataDate).filter(Boolean).sort().pop() ?? 'now')
+    : 'now'
+  const cur = combined ?? { pv: 0, ev: 0, ac: 0, cpi: 0, spi: 0, tcpi: 0, vac: 0, po: 0, bac: 0, sv: 0, cv: 0, eac: 0, etc: 0, benefit: 0, percentComplete: 0 }
   const trendData = history.length > 0
     ? history.map(h => ({ date: h.date, PV: (h.pv ?? 0) / 1e6, EV: (h.ev ?? 0) / 1e6, AC: (h.ac ?? 0) / 1e6 }))
-    : [{ date: selected?.dataDate ?? 'now', PV: (selected?.pv ?? 0) / 1e6, EV: (selected?.ev ?? 0) / 1e6, AC: (selected?.ac ?? 0) / 1e6 }]
-
+    : [{ date: snapshotDate, PV: cur.pv / 1e6, EV: cur.ev / 1e6, AC: cur.ac / 1e6 }]
   const varianceData = history.length > 0
     ? history.map(h => ({ date: h.date, SV: ((h.ev ?? 0) - (h.pv ?? 0)) / 1e6, CV: ((h.ev ?? 0) - (h.ac ?? 0)) / 1e6 }))
-    : [{ date: selected?.dataDate ?? 'now', SV: ((selected?.ev ?? 0) - (selected?.pv ?? 0)) / 1e6, CV: ((selected?.ev ?? 0) - (selected?.ac ?? 0)) / 1e6 }]
+    : [{ date: snapshotDate, SV: (cur.ev - cur.pv) / 1e6, CV: (cur.ev - cur.ac) / 1e6 }]
 
-  const summaryData = evmList.map(e => ({
-    name: (e.projectName ?? '').split(' ').slice(0, 3).join(' '),
-    CPI: e.cpi ?? 0,
-    SPI: e.spi ?? 0,
-  }))
+  const summaryData = groups.map(g => {
+    const c = combinedByGroup.get(g.key)!
+    return { name: g.projectName.split(' ').slice(0, 3).join(' '), CPI: c.cpi ?? 0, SPI: c.spi ?? 0 }
+  })
 
   return (
     <div className="space-y-6">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-sm text-slate-500">One record per engagement (its project). Enter PO (customer), BAC (internal budget), PV, AC and progress % — EV = BAC × progress, and CPI, SPI, SV, CV, EAC, ETC, VAC, TCPI, Benefit (PO − AC) are computed automatically. As work progresses, edit the record and <strong>Save snapshot</strong> to build the S-curve over time; the Customer Rollup below sums all of a customer's sites.</p>
+          <p className="text-sm text-slate-500">Sites of the same project name (e.g. STARLINK) combine into one card — use the <strong>site checkboxes</strong> to include or exclude each site's data (default: all included). Enter PO / BAC / PV / AC / progress % — EV = BAC × progress, and CPI, SPI, SV, CV, EAC, ETC, VAC, TCPI, Benefit (PO − AC) are computed automatically. Save a snapshot per site to build the S-curve over time.</p>
         </div>
         <Button icon={<Plus className="w-4 h-4" />} onClick={openCreate}>New EVM Record</Button>
       </div>
       {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
+      {snapshotMsg && <p className="text-xs text-green-600 dark:text-green-400">{snapshotMsg}</p>}
+      {hiddenSiteIds.size > 0 && <p className="text-xs text-slate-400">🔍 {hiddenSiteIds.size} site(s) excluded — calculations only include the checked sites.</p>}
 
-      {!selected ? (
-        <p className="text-sm text-slate-500">No EVM data yet — click “New EVM Record” to add the first cost/schedule snapshot.</p>
+      {groups.length === 0 ? (
+        <p className="text-sm text-slate-500">
+          {siteRecords.length > 0
+            ? 'All sites are excluded — check at least one site checkbox to see EVM data.'
+            : 'No EVM data yet — click “New EVM Record” to add the first cost/schedule snapshot.'}
+        </p>
       ) : (
         <>
-      {/* Project selector */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {evmList.map(e => (
-          <Card key={`${e.projectId}-${e.dataDate ?? ''}`} hover padding={false}
-            onClick={() => setSelected(e)}
-            className={clsx('p-4 border-2 transition-all', selected.projectId === e.projectId
-              ? 'border-brand-500 shadow-md' : 'border-transparent')}>
-            <div className="flex items-start justify-between gap-2">
-              <p className="text-xs font-bold text-brand-600 dark:text-brand-400">{e.customerName}</p>
-              <div className="flex gap-1 flex-shrink-0" onClick={ev => ev.stopPropagation()}>
-                <button onClick={() => openEdit(e)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
-                <button onClick={() => handleDelete(e)} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+      {/* Project groups with per-site filter */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {groups.map(g => {
+          const c = combinedByGroup.get(g.key)!
+          return (
+            <Card key={g.key} hover padding={false}
+              onClick={() => setSelectedGroupKey(g.key)}
+              className={clsx('p-4 border-2 transition-all', selectedGroup?.key === g.key
+                ? 'border-brand-500 shadow-md' : 'border-transparent')}>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-xs font-bold text-brand-600 dark:text-brand-400">{g.customerName}</p>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-300">{g.records.length} site{g.records.length === 1 ? '' : 's'}</span>
               </div>
-            </div>
-            <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug">{e.projectName}</p>
-            <SiteList sites={sitesByProject.get(e.projectId ?? '') ?? []} limit={2} />
-            <div className="grid grid-cols-3 gap-2 text-center mt-2">
-              <div>
-                <p className="text-xs text-slate-400">CPI</p>
-                <p className={clsx('text-lg font-black', (e.cpi ?? 0) >= 1 ? 'text-green-600' : 'text-red-600')}>{(e.cpi ?? 0).toFixed(2)}</p>
+              <p className="text-sm font-bold text-slate-900 dark:text-white leading-snug">{g.projectName}</p>
+              {/* Site filter — per-site checkboxes, default all checked */}
+              <div className="flex flex-wrap gap-x-3 gap-y-1.5 mt-2" onClick={ev => ev.stopPropagation()}>
+                {g.records.map(r => (
+                  <label key={r.recordId} className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                    <input type="checkbox" checked={!hiddenSiteIds.has(r.recordId)} onChange={() => toggleSite(r.recordId)} />
+                    <span className="font-mono">{r.siteKey}</span>
+                  </label>
+                ))}
               </div>
-              <div>
-                <p className="text-xs text-slate-400">SPI</p>
-                <p className={clsx('text-lg font-black', (e.spi ?? 0) >= 1 ? 'text-green-600' : 'text-amber-600')}>{(e.spi ?? 0).toFixed(2)}</p>
+              <div className="grid grid-cols-3 gap-2 text-center mt-2">
+                <div>
+                  <p className="text-xs text-slate-400">CPI</p>
+                  <p className={clsx('text-lg font-black', c.cpi >= 1 ? 'text-green-600' : 'text-red-600')}>{c.cpi.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">SPI</p>
+                  <p className={clsx('text-lg font-black', c.spi >= 1 ? 'text-green-600' : 'text-amber-600')}>{c.spi.toFixed(2)}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-400">Done</p>
+                  <p className="text-lg font-black text-slate-900 dark:text-white">{Math.round(c.percentComplete)}%</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-400">Done</p>
-                <p className="text-lg font-black text-slate-900 dark:text-white">{e.percentComplete ?? 0}%</p>
+              <div className="mt-3 w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5">
+                <div className={clsx('h-1.5 rounded-full', c.percentComplete > 80 ? 'bg-green-500' : 'bg-brand-500')}
+                  style={{ width: `${Math.min(100, c.percentComplete)}%` }} />
               </div>
-            </div>
-            <div className="mt-3 w-full bg-slate-100 dark:bg-slate-700 rounded-full h-1.5">
-              <div className={clsx('h-1.5 rounded-full', (e.percentComplete ?? 0) > 80 ? 'bg-green-500' : 'bg-brand-500')}
-                style={{ width: `${Math.min(100, e.percentComplete ?? 0)}%` }} />
-            </div>
-          </Card>
-        ))}
+            </Card>
+          )
+        })}
       </div>
 
-      {/* Customer rollup — program-level EVM across all of a customer's sites */}
+      {/* Customer rollup — respects the site filter */}
       {rollups.length > 0 && (
         <div>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="section-title">Customer Rollup</h3>
-            <p className="text-xs text-slate-400">Program-level EVM — all sites of each customer combined (one EVM record per site-installation)</p>
+            <p className="text-xs text-slate-400">Program-level EVM — all checked sites of each customer combined</p>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-3">
             {rollups.map(r => (
@@ -289,44 +361,36 @@ export function EVMModule() {
         </div>
       )}
 
-      {/* Selected Project EVM Detail */}
+      {/* Selected group detail */}
+      {selectedGroup && combined && (
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
         {/* Left: Metrics */}
         <div className="space-y-4">
           <Card className="p-4">
-            <p className="section-title mb-1">{selected.projectName}</p>
-            <SiteList sites={selSites} />
-            <div className="flex items-center justify-between gap-2 mt-1 mb-4">
-              <p className="text-xs text-slate-500">Data Date: <strong>{selected.dataDate}</strong></p>
-              <button onClick={saveSnapshot} disabled={!selected.id}
-                className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-brand-500 text-white hover:bg-brand-600 disabled:opacity-50 disabled:cursor-not-allowed">
-                <Camera className="w-3.5 h-3.5" /> Save snapshot
-              </button>
-            </div>
-            {snapshotMsg && <p className="text-xs text-green-600 dark:text-green-400 mb-3">{snapshotMsg}</p>}
-            {snapCount > 0 && <p className="text-xs text-slate-400 mb-3">📈 {snapCount} snapshot{snapCount === 1 ? '' : 's'} recorded — S-curve &amp; variance charts plot the trend.</p>}
+            <p className="section-title mb-1">{selectedGroup.projectName}</p>
+            <p className="text-xs text-slate-500 mb-3">{selectedGroup.customerName} · {selectedGroup.records.length} site{selectedGroup.records.length === 1 ? '' : 's'} combined</p>
 
             {/* CPI / SPI / TCPI gauges */}
             <div className="grid grid-cols-3 gap-2 mb-4">
-              <IndexGauge label="CPI"  value={selected.cpi}  good />
-              <IndexGauge label="SPI"  value={selected.spi}  good />
-              <IndexGauge label="TCPI" value={selected.tcpi} good={false} />
+              <IndexGauge label="CPI"  value={combined.cpi}  good />
+              <IndexGauge label="SPI"  value={combined.spi}  good />
+              <IndexGauge label="TCPI" value={combined.tcpi} good={false} />
             </div>
 
             <div className="space-y-1.5">
-              <EVMRow label="PO — Customer PO" value={fmt(selected.po)} subtitle="Contracted value from the customer" highlight="neutral" />
-              <EVMRow label="BAC — Internal Budget" value={fmt(selected.bac)} subtitle="Our budget at completion" highlight="neutral" />
-              <EVMRow label="PV — Planned Value"  value={fmt(selected.pv)}  subtitle="Work planned to date" highlight="neutral" />
-              <EVMRow label="EV — Earned Value"   value={fmt(selected.ev)}  subtitle="BAC × progress % (derived)" highlight={selected.ev >= selected.pv ? 'good' : 'bad'} />
-              <EVMRow label="AC — Actual Cost"    value={fmt(selected.ac)}  subtitle="Cost incurred to date" highlight="neutral" />
-              <EVMRow label="Benefit" value={fmt((selected.po ?? 0) - (selected.ac ?? 0))} subtitle="PO − AC" highlight={(selected.po ?? 0) - (selected.ac ?? 0) >= 0 ? 'good' : 'bad'} />
+              <EVMRow label="PO — Customer PO" value={fmt(combined.po)} subtitle="Contracted value from the customer" highlight="neutral" />
+              <EVMRow label="BAC — Internal Budget" value={fmt(combined.bac)} subtitle="Our budget at completion" highlight="neutral" />
+              <EVMRow label="PV — Planned Value"  value={fmt(combined.pv)}  subtitle="Work planned to date" highlight="neutral" />
+              <EVMRow label="EV — Earned Value"   value={fmt(combined.ev)}  subtitle="BAC × progress % (derived)" highlight={combined.ev >= combined.pv ? 'good' : 'bad'} />
+              <EVMRow label="AC — Actual Cost"    value={fmt(combined.ac)}  subtitle="Cost incurred to date" highlight="neutral" />
+              <EVMRow label="Benefit" value={fmt(combined.benefit)} subtitle="PO − AC" highlight={combined.benefit >= 0 ? 'good' : 'bad'} />
               <div className="my-2 border-t border-slate-200 dark:border-slate-700" />
-              <EVMRow label="SV — Schedule Variance" value={fmt(selected.sv)} subtitle="EV − PV" highlight={selected.sv >= 0 ? 'good' : 'bad'} />
-              <EVMRow label="CV — Cost Variance"     value={fmt(selected.cv)} subtitle="EV − AC" highlight={selected.cv >= 0 ? 'good' : 'bad'} />
+              <EVMRow label="SV — Schedule Variance" value={fmt(combined.sv)} subtitle="EV − PV" highlight={combined.sv >= 0 ? 'good' : 'bad'} />
+              <EVMRow label="CV — Cost Variance"     value={fmt(combined.cv)} subtitle="EV − AC" highlight={combined.cv >= 0 ? 'good' : 'bad'} />
               <div className="my-2 border-t border-slate-200 dark:border-slate-700" />
-              <EVMRow label="EAC — Est. at Completion" value={fmt(selected.eac)} subtitle="BAC ÷ CPI" highlight={selected.eac <= selected.bac ? 'good' : 'bad'} />
-              <EVMRow label="ETC — Est. to Complete"   value={fmt(selected.etc)} subtitle="EAC − AC" highlight="neutral" />
-              <EVMRow label="VAC — Variance at Compl." value={fmt(selected.vac)} subtitle="BAC − EAC" highlight={selected.vac >= 0 ? 'good' : 'bad'} />
+              <EVMRow label="EAC — Est. at Completion" value={fmt(combined.eac)} subtitle="BAC ÷ CPI" highlight={combined.eac <= combined.bac ? 'good' : 'bad'} />
+              <EVMRow label="ETC — Est. to Complete"   value={fmt(combined.etc)} subtitle="EAC − AC" highlight="neutral" />
+              <EVMRow label="VAC — Variance at Compl." value={fmt(combined.vac)} subtitle="BAC − EAC" highlight={combined.vac >= 0 ? 'good' : 'bad'} />
             </div>
           </Card>
 
@@ -334,28 +398,40 @@ export function EVMModule() {
           <Card className="p-4">
             <p className="text-sm font-bold text-slate-900 dark:text-white mb-3">📋 Performance Interpretation</p>
             <div className="space-y-2 text-xs text-slate-600 dark:text-slate-400">
-              <div className={clsx('p-2 rounded-lg', selected.cpi >= 1 ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400')}>
-                <strong>Cost:</strong> {selected.cpi >= 1 ? `Under budget — getting ${pct(selected.cpi)} of value per Ariary spent.` : `Over budget — only getting ${pct(selected.cpi)} of value per Ariary spent.`}
+              <div className={clsx('p-2 rounded-lg', combined.cpi >= 1 ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400')}>
+                <strong>Cost:</strong> {combined.cpi >= 1 ? `Under budget — getting ${pct(combined.cpi)} of value per Ariary spent.` : `Over budget — only getting ${pct(combined.cpi)} of value per Ariary spent.`}
               </div>
-              <div className={clsx('p-2 rounded-lg', selected.spi >= 1 ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400')}>
-                <strong>Schedule:</strong> {selected.spi >= 1 ? `Ahead of schedule — completing ${pct(selected.spi)} of planned work.` : `Behind schedule — only ${pct(selected.spi)} of planned work done.`}
+              <div className={clsx('p-2 rounded-lg', combined.spi >= 1 ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400')}>
+                <strong>Schedule:</strong> {combined.spi >= 1 ? `Ahead of schedule — completing ${pct(combined.spi)} of planned work.` : `Behind schedule — only ${pct(combined.spi)} of planned work done.`}
               </div>
-              <div className={clsx('p-2 rounded-lg', selected.vac >= 0 ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400')}>
-                <strong>Forecast:</strong> {selected.vac >= 0 ? `On track to finish ${fmt(selected.vac)} under budget.` : `Forecast to exceed budget by ${fmt(Math.abs(selected.vac))}.`}
+              <div className={clsx('p-2 rounded-lg', combined.vac >= 0 ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400')}>
+                <strong>Forecast:</strong> {combined.vac >= 0 ? `On track to finish ${fmt(combined.vac)} under budget.` : `Forecast to exceed budget by ${fmt(Math.abs(combined.vac))}.`}
               </div>
               <div className="p-2 rounded-lg bg-slate-100 dark:bg-slate-700/50">
-                <strong>TCPI {selected.tcpi.toFixed(3)}:</strong> {selected.tcpi <= 1.0 ? 'Remaining work can be completed within budget at current efficiency.' : `Must achieve ${pct(selected.tcpi)} efficiency on remaining work to meet BAC — ${selected.tcpi > 1.1 ? '⚠️ challenging' : 'feasible'}.`}
+                <strong>TCPI {combined.tcpi.toFixed(3)}:</strong> {combined.tcpi <= 1.0 ? 'Remaining work can be completed within budget at current efficiency.' : `Must achieve ${pct(combined.tcpi)} efficiency on remaining work to meet BAC — ${combined.tcpi > 1.1 ? '⚠️ challenging' : 'feasible'}.`}
               </div>
             </div>
           </Card>
         </div>
 
-        {/* Right: Charts */}
+        {/* Right: per-site breakdown + charts */}
         <div className="xl:col-span-2 space-y-4">
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-bold text-slate-900 dark:text-white">Sites</p>
+              <p className="text-xs text-slate-400">One EVM record per site — snapshot / edit / delete per site</p>
+            </div>
+            <div className="mt-3 space-y-2">
+              {selectedGroup.records.map(r => (
+                <SiteRow key={r.recordId} r={r} onSnapshot={saveSnapshot} onEdit={handleEdit} onDelete={handleDelete} />
+              ))}
+            </div>
+          </Card>
+
           <Card padding={false}>
             <div className="px-5 pt-5 pb-2">
               <h3 className="section-title">S-Curve: PV / EV / AC</h3>
-              <p className="text-xs text-slate-500 mt-0.5">Cumulative values over time (M Ar)</p>
+              <p className="text-xs text-slate-500 mt-0.5">Cumulative values over time, all checked sites combined (M Ar)</p>
             </div>
             <div className="px-2 pb-4">
               <ResponsiveContainer width="100%" height={240}>
@@ -397,7 +473,7 @@ export function EVMModule() {
           <Card padding={false}>
             <div className="px-5 pt-5 pb-2">
               <h3 className="section-title">Portfolio: CPI vs SPI</h3>
-              <p className="text-xs text-slate-500 mt-0.5">All active projects — target ≥ 1.00</p>
+              <p className="text-xs text-slate-500 mt-0.5">Combined per project — target ≥ 1.00</p>
             </div>
             <div className="px-2 pb-4">
               <ResponsiveContainer width="100%" height={160}>
@@ -416,6 +492,7 @@ export function EVMModule() {
           </Card>
         </div>
       </div>
+      )}
         </>
       )}
       {modal}

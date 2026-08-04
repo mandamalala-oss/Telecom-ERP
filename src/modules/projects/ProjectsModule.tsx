@@ -76,16 +76,15 @@ export function ProjectsModule() {
   const { data: projectSites, refresh: refreshProjectSites } = useEntity<ProjectSite>(TABLES.projectSites)
 
   // Keep the junction table in sync when the form's site selection changes.
-  // `values` carries the virtual `siteIds` multiSelect (stripped from the
-  // projects row itself); we rewrite the project_sites rows here, on both
-  // create and edit.
+  // 1 project = 1 site: `values` carries the virtual `siteId` single-select
+  // (stripped from the projects row itself); we rewrite the project_sites rows
+  // here, on both create and edit.
   const syncSites = async (row: Project, values: Record<string, any>) => {
-    const siteIds: string[] = Array.isArray(values.siteIds) ? values.siteIds : []
+    const siteId: string = typeof values.siteId === 'string' ? values.siteId : ''
     const { error: del } = await supabase.from('project_sites').delete().eq('project_id', row.id)
     if (del) throw del
-    if (siteIds.length > 0) {
-      const rows = [...new Set(siteIds)].map((siteId) => ({ project_id: row.id, site_id: siteId }))
-      const { error: ins } = await supabase.from('project_sites').insert(rows)
+    if (siteId) {
+      const { error: ins } = await supabase.from('project_sites').insert({ project_id: row.id, site_id: siteId })
       if (ins) throw ins
     }
     await refreshProjectSites()
@@ -141,9 +140,9 @@ export function ProjectsModule() {
         {[
           { l: 'Total Projects',    v: projects.length,                          color: 'text-blue-600' },
           { l: 'In Progress',       v: projects.filter(p=>p.status==='in_progress').length, color: 'text-amber-600' },
-          { l: 'Total Budget',      v: fmt(totalBudget),                         color: 'text-purple-600' },
-          { l: 'Total Spent',       v: fmt(totalSpent),                          color: 'text-slate-900 dark:text-white' },
-          { l: 'Total Revenue',     v: fmt(totalRevenue),                        color: 'text-green-600' },
+          { l: 'Total BAC',         v: fmt(totalBudget),                         color: 'text-purple-600' },
+          { l: 'Total AC',          v: fmt(totalSpent),                          color: 'text-slate-900 dark:text-white' },
+          { l: 'Total PO',          v: fmt(totalRevenue),                        color: 'text-green-600' },
           { l: 'Total Profit',      v: fmt(totalProfit),                         color: totalProfit >= 0 ? 'text-green-600' : 'text-red-600' },
         ].map(s => (
           <Card key={s.l} className="p-4">
@@ -201,15 +200,15 @@ export function ProjectsModule() {
                       <p className="text-xl font-bold text-brand-600">{p.progress}%</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-xs text-slate-400">Budget</p>
+                      <p className="text-xs text-slate-400">BAC</p>
                       <p className="text-sm font-bold text-slate-900 dark:text-white">{fmt(p.budget)}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-xs text-slate-400">Spent</p>
+                      <p className="text-xs text-slate-400">AC</p>
                       <p className={`text-sm font-bold ${overBudget ? 'text-red-600' : 'text-slate-900 dark:text-white'}`}>{fmt(p.spent)}</p>
                     </div>
                     <div className="text-center">
-                      <p className="text-xs text-slate-400">Revenue</p>
+                      <p className="text-xs text-slate-400">PO</p>
                       <p className="text-sm font-bold text-green-600">{fmt(p.revenue)}</p>
                     </div>
                     <div className="text-center">
@@ -250,21 +249,21 @@ export function ProjectsModule() {
           footer={
             <div className="flex justify-end gap-2">
               <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDelete(selected.id!)}>Delete</Button>
-              <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { openEdit({ ...selected, siteIds: selSites.map(s => s.id) }); setSelected(null) }}>Edit</Button>
+              <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { openEdit({ ...selected, siteId: selSites[0]?.id ?? '' }); setSelected(null) }}>Edit</Button>
             </div>
           }>
           <div className="space-y-5">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
-                { l: 'Sites',     v: selSites.length > 0 ? selSites.map(s => `${s.siteId} — ${s.name}`).join(' · ') : '—' },
+                { l: 'Site',      v: selSites.length > 0 ? `${selSites[0].siteId} — ${selSites[0].name}` : '—' },
                 { l: 'Customer',  v: selected.customerName },
                 { l: 'Region',    v: selected.region },
                 { l: 'PM',        v: selected.pm },
                 { l: 'Start',     v: selected.startDate },
                 { l: 'End',       v: selected.endDate },
-                { l: 'Budget',    v: fmt(selected.budget) },
-                { l: 'Spent',     v: fmt(selected.spent) },
-                { l: 'Revenue',   v: fmt(selected.revenue) },
+                { l: 'BAC',       v: fmt(selected.budget) },
+                { l: 'AC',        v: fmt(selected.spent) },
+                { l: 'PO',        v: fmt(selected.revenue) },
                 { l: 'Variance',  v: <span className={selFin.varianceColor}>{fmt(selFin.variance)}</span> },
                 { l: 'Profit (excl. tax)', v: <span className={selFin.profitColor}>{fmt(selFin.profit)}</span> },
               ].map(item => (

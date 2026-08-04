@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { appendSnapshot, deriveEVM, evFromProgress, rollupCustomerEVM } from '@/lib/evm'
+import {
+  appendSnapshot, combineEVMRecords, deriveEVM, evFromProgress,
+  groupEVMByProject, mergeHistories, rollupCustomerEVM,
+  type EVMSiteRecord,
+} from '@/lib/evm'
 
 describe('deriveEVM', () => {
   it('computes all derived metrics from BAC/PV/EV/AC', () => {
@@ -161,5 +165,80 @@ describe('rollupCustomerEVM', () => {
     expect(rollups[0].cpi).toBe(0)
     expect(rollups[0].spi).toBe(0)
     expect(rollups[0].percentComplete).toBe(0)
+  })
+})
+
+describe('combineEVMRecords', () => {
+  it('sums PO/BAC/PV/EV/AC and re-derives the metrics', () => {
+    const c = combineEVMRecords([
+      { customerName: 'Telma', po: 2_500_000, bac: 1_000_000, pv: 500_000, ev: 400_000, ac: 320_000 },
+      { customerName: 'Telma', po: 3_500_000, bac: 2_000_000, pv: 1_500_000, ev: 1_000_000, ac: 900_000 },
+    ])
+    expect(c.po).toBe(6_000_000)
+    expect(c.bac).toBe(3_000_000)
+    expect(c.pv).toBe(2_000_000)
+    expect(c.ev).toBe(1_400_000)
+    expect(c.ac).toBe(1_220_000)
+    expect(c.cpi).toBeCloseTo(1400 / 1220)
+    expect(c.benefit).toBe(6_000_000 - 1_220_000)
+    expect(c.percentComplete).toBeCloseTo((1400 / 3000) * 100)
+  })
+
+  it('returns zeros for an empty record list', () => {
+    const c = combineEVMRecords([])
+    expect(c).toMatchObject({ po: 0, bac: 0, pv: 0, ev: 0, ac: 0, benefit: 0, percentComplete: 0, cpi: 0, spi: 0 })
+  })
+})
+
+describe('groupEVMByProject', () => {
+  const rec = (over: Partial<EVMSiteRecord>): EVMSiteRecord => ({
+    recordId: 'r1', projectName: 'STARLINK', customerName: 'Telma', siteKey: 'MDG-001',
+    po: 0, bac: 0, pv: 0, ev: 0, ac: 0, percentComplete: 0, ...over,
+  } as EVMSiteRecord)
+
+  it('combines sites that share a project name + customer', () => {
+    const groups = groupEVMByProject([
+      rec({ recordId: 'a', siteKey: 'MDG-001', projectName: 'STARLINK' }),
+      rec({ recordId: 'b', siteKey: 'MDG-002', projectName: 'STARLINK' }),
+    ])
+    expect(groups).toHaveLength(1)
+    expect(groups[0].records.map(r => r.siteKey)).toEqual(['MDG-001', 'MDG-002'])
+  })
+
+  it('keeps different projects separate', () => {
+    const groups = groupEVMByProject([
+      rec({ recordId: 'a', projectName: 'STARLINK' }),
+      rec({ recordId: 'b', projectName: 'ORANGE 2026' }),
+    ])
+    expect(groups.map(g => g.projectName)).toEqual(['ORANGE 2026', 'STARLINK'])
+  })
+
+  it('splits same project name across different customers', () => {
+    const groups = groupEVMByProject([
+      rec({ recordId: 'a', customerName: 'Telma', projectName: 'STARLINK' }),
+      rec({ recordId: 'b', customerName: 'Orange', projectName: 'STARLINK' }),
+    ])
+    expect(groups).toHaveLength(2)
+  })
+
+  it('returns an empty array for no records', () => {
+    expect(groupEVMByProject([])).toEqual([])
+  })
+})
+
+describe('mergeHistories', () => {
+  it('sums same-date snapshots across records, chronologically', () => {
+    const merged = mergeHistories([
+      { history: [{ date: '2026-08-01', pv: 100, ev: 80, ac: 70 }, { date: '2026-08-10', pv: 200, ev: 160, ac: 150 }] },
+      { history: [{ date: '2026-08-01', pv: 50, ev: 40, ac: 30 }] },
+    ])
+    expect(merged).toEqual([
+      { date: '2026-08-01', pv: 150, ev: 120, ac: 100 },
+      { date: '2026-08-10', pv: 200, ev: 160, ac: 150 },
+    ])
+  })
+
+  it('handles records without history', () => {
+    expect(mergeHistories([{ history: undefined }, {}])).toEqual([])
   })
 })

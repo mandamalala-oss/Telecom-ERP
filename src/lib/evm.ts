@@ -65,7 +65,7 @@ export function appendSnapshot(
   return next.length > maxPoints ? next.slice(next.length - maxPoints) : next
 }
 
-// ─── Customer rollup (program-level EVM) ─────────────────────────────────────
+// ─── Combination / grouping (program-level EVM) ─────────────────────────────
 
 export interface EVMRollupInput {
   customerName?: string | null;
@@ -76,10 +76,8 @@ export interface EVMRollupInput {
   ac: number;
 }
 
-export interface EVMCustomerRollup extends DerivedEVM {
-  customerName: string;
-  siteCount: number;      // number of per-site EVM records grouped here
-  po: number;             // customer PO summed across the sites
+export interface CombinedEVM extends DerivedEVM {
+  po: number;
   bac: number;
   pv: number;
   ev: number;
@@ -88,40 +86,109 @@ export interface EVMCustomerRollup extends DerivedEVM {
   percentComplete: number; // ΣEV / ΣBAC × 100
 }
 
+export interface EVMCustomerRollup extends CombinedEVM {
+  customerName: string;
+  siteCount: number;      // number of per-site EVM records grouped here
+}
+
+/**
+ * Sum PO/BAC/PV/EV/AC across records, then re-derive the standard metrics
+ * from the totals (EVM is linear in these inputs, so summing is correct).
+ * Pure + unit-tested; the building block for the customer rollup and for a
+ * project group's combined view.
+ */
+export function combineEVMRecords(records: EVMRollupInput[]): CombinedEVM {
+  let po = 0, bac = 0, pv = 0, ev = 0, ac = 0
+  for (const r of records) {
+    po += r.po ?? 0
+    bac += r.bac ?? 0
+    pv += r.pv ?? 0
+    ev += r.ev ?? 0
+    ac += r.ac ?? 0
+  }
+  return {
+    ...deriveEVM(bac, pv, ev, ac),
+    po, bac, pv, ev, ac,
+    benefit: po - ac,
+    percentComplete: bac > 0 ? (ev / bac) * 100 : 0,
+  }
+}
+
 /**
  * Aggregate the per-site EVM records of a customer into one program-level
- * picture: BAC/PV/EV/AC are summed, then the standard metrics are re-derived
- * from the totals (EVM is linear in these inputs, so summing is correct).
+ * picture. Records without a customer name group under '—'.
  * Pure + unit-tested; used by the EVM module's customer rollup view.
- * Records without a customer name group under '—'.
  */
 export function rollupCustomerEVM(records: EVMRollupInput[]): EVMCustomerRollup[] {
-  const acc = new Map<string, EVMCustomerRollup>()
+  const byCustomer = new Map<string, EVMRollupInput[]>()
   for (const r of records) {
     const name = (r.customerName ?? '').trim() || '—'
-    let rollup = acc.get(name)
-    if (!rollup) {
-      rollup = {
-        customerName: name, siteCount: 0,
-        po: 0, bac: 0, pv: 0, ev: 0, ac: 0,
-        benefit: 0, percentComplete: 0,
-        cpi: 0, spi: 0, sv: 0, cv: 0, eac: 0, etc: 0, vac: 0, tcpi: 0,
-      }
-      acc.set(name, rollup)
+    const list = byCustomer.get(name) ?? []
+    list.push(r)
+    byCustomer.set(name, list)
+  }
+  return [...byCustomer.entries()]
+    .map(([name, list]) => ({ customerName: name, siteCount: list.length, ...combineEVMRecords(list) }))
+    .sort((a, b) => b.bac - a.bac)
+}
+
+// ─── Per-site records & project grouping (EVM page) ──────────────────────────
+
+/** A single EVM record decorated with the site it belongs to (1 project = 1 site). */
+export interface EVMSiteRecord extends EVMRollupInput {
+  recordId: string
+  projectName: string
+  siteKey: string    // site code (siteId) or the project name when no site is linked
+  siteName?: string
+  po: number         // required: per-site rows display it
+  percentComplete: number
+  dataDate?: string
+  history?: EVMSnapshot[]
+}
+
+export interface EVMProjectGroup {
+  key: string          // `${customerName}::${projectName}`
+  projectName: string
+  customerName: string
+  records: EVMSiteRecord[]
+}
+
+/**
+ * Group per-site EVM records by project name + customer: two sites with the
+ * same project name (e.g. STARLINK site A + site B) combine into one group so
+ * they can be viewed together, while the per-site filter below can still
+ * isolate individual sites. Pure + unit-tested.
+ */
+export function groupEVMByProject(records: EVMSiteRecord[]): EVMProjectGroup[] {
+  const map = new Map<string, EVMProjectGroup>()
+  for (const r of records) {
+    const key = `${r.customerName ?? '—'}::${r.projectName}`
+    let g = map.get(key)
+    if (!g) {
+      g = { key, projectName: r.projectName, customerName: r.customerName ?? '—', records: [] }
+      map.set(key, g)
     }
-    rollup.siteCount += 1
-    rollup.po += r.po ?? 0
-    rollup.bac += r.bac ?? 0
-    rollup.pv += r.pv ?? 0
-    rollup.ev += r.ev ?? 0
-    rollup.ac += r.ac ?? 0
+    g.records.push(r)
   }
-  const result = [...acc.values()]
-  for (const rollup of result) {
-    Object.assign(rollup, deriveEVM(rollup.bac, rollup.pv, rollup.ev, rollup.ac))
-    rollup.benefit = rollup.po - rollup.ac
-    rollup.percentComplete = rollup.bac > 0 ? (rollup.ev / rollup.bac) * 100 : 0
+  return [...map.values()]
+    .sort((a, b) => a.projectName.localeCompare(b.projectName) || a.customerName.localeCompare(b.customerName))
+}
+
+/**
+ * Merge several records' history series into one: same-date snapshots are
+ * summed (a combined S-curve across sites), sorted chronologically.
+ * Pure + unit-tested.
+ */
+export function mergeHistories(records: Array<{ history?: EVMSnapshot[] }>): EVMSnapshot[] {
+  const byDate = new Map<string, EVMSnapshot>()
+  for (const r of records) {
+    for (const h of r.history ?? []) {
+      const cur = byDate.get(h.date) ?? { date: h.date, pv: 0, ev: 0, ac: 0 }
+      cur.pv += h.pv ?? 0
+      cur.ev += h.ev ?? 0
+      cur.ac += h.ac ?? 0
+      byDate.set(h.date, cur)
+    }
   }
-  result.sort((a, b) => b.bac - a.bac)
-  return result
+  return [...byDate.values()].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0))
 }
