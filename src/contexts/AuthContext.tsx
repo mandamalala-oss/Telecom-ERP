@@ -51,7 +51,7 @@ export function describeAuthError(e: unknown): string {
   // Common fields across supabase / fetch / custom errors.
   const parts = [
     err.message, err.error_description, err.msg, err.hint, err.details,
-    err.code, err.status, err.name,
+    err.code, err.status,
   ]
   const text = parts
     .filter((p) => p !== undefined && p !== null && p !== '')
