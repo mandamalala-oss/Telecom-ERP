@@ -1,15 +1,20 @@
-import { useState } from 'react'
+import { useState, type FormEvent } from 'react'
 import { Phone, Mail, Shield, Plus, Trash2, Pencil } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
+import { Input, Select } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
+import { makeApi } from '@/lib/api/crud'
+import { supabase } from '@/lib/supabase'
 import { TABLES } from '@/lib/api/entityConfigs'
 import type { User, Task, Project } from '@/types'
 import { PERMISSION_MODULES, ROLE_PERMISSIONS } from '@/types'
 import { clsx } from 'clsx'
+
+const usersApi = makeApi<User>('users')
 
 const ROLE_COLOR: Record<string, string> = {
   admin:    'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
@@ -20,11 +25,50 @@ const ROLE_COLOR: Record<string, string> = {
 }
 
 export function TeamModule() {
-  const { data: users, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<User>(TABLES.users, 'Team Member')
+  const { data: users, loading, error, openEdit, remove, modal, refresh: refreshUsers } = useEntityCrud<User>(TABLES.users, 'Team Member')
   const { data: tasks } = useEntity<Task>(TABLES.tasks)
   const { data: projects } = useEntity<Project>(TABLES.projects)
   const [selected, setSelected] = useState<User | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [invite, setInvite] = useState({ name: '', email: '', password: '', role: 'viewer', department: '', phone: '' })
+  const [inviteError, setInviteError] = useState<string | null>(null)
+  const [inviting, setInviting] = useState(false)
+
+  // Create the ACCOUNT first (Supabase Auth) — the 012 sync trigger then
+  // creates the `users` profile row, so we never INSERT a users row directly
+  // (that was the source of the duplicate email_key error).
+  const handleInvite = async (e: FormEvent) => {
+    e.preventDefault()
+    setInviteError(null)
+    setInviting(true)
+    try {
+      const email = invite.email.trim()
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password: invite.password,
+        options: { data: { name: invite.name.trim() } },
+      })
+      if (error) throw error
+      const uid = data.user?.id
+      if (uid) {
+        // Trigger created the profile with role 'viewer' — promote + fill.
+        await usersApi.update(uid, {
+          name: invite.name.trim() || email.split('@')[0],
+          role: invite.role as User['role'],
+          department: invite.department,
+          phone: invite.phone,
+        } as Partial<User>)
+      }
+      await refreshUsers()
+      setInviteOpen(false)
+      setInvite({ name: '', email: '', password: '', role: 'viewer', department: '', phone: '' })
+    } catch (err: any) {
+      setInviteError(err?.message ?? String(err))
+    } finally {
+      setInviting(false)
+    }
+  }
 
   const handleDelete = async (id: string) => {
     if (!confirm('Remove this team member?')) return
@@ -65,7 +109,7 @@ export function TeamModule() {
       {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
       {loading && <p className="text-xs text-slate-500">Loading…</p>}
       <div className="flex justify-end">
-        <Button icon={<Plus className="w-4 h-4"/>} onClick={openCreate}>New Team Member</Button>
+        <Button icon={<Plus className="w-4 h-4"/>} onClick={() => setInviteOpen(true)}>New Team Member</Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -215,6 +259,35 @@ export function TeamModule() {
           </div>
         </Modal>
       )}
+      {inviteOpen && (
+        <Modal open title="Add Team Member" onClose={() => setInviteOpen(false)} size="lg"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setInviteOpen(false)}>Cancel</Button>
+              <Button type="submit" form="team-invite-form" disabled={inviting}>{inviting ? 'Creating…' : 'Create account & add'}</Button>
+            </div>
+          }>
+          <form id="team-invite-form" onSubmit={handleInvite} className="space-y-4">
+            <Input label="Full name" value={invite.name} onChange={(e) => setInvite({ ...invite, name: e.target.value })} placeholder="e.g. Rina" />
+            <Input label="Email (login)" type="email" required value={invite.email} onChange={(e) => setInvite({ ...invite, email: e.target.value })} placeholder="they@company.mg" />
+            <Input label="Temporary password" type="text" required value={invite.password} onChange={(e) => setInvite({ ...invite, password: e.target.value })} placeholder="e.g. Temp2026!" />
+            <Select label="Role" value={invite.role} onChange={(e) => setInvite({ ...invite, role: e.target.value })}>
+              {['viewer', 'engineer', 'pm', 'finance', 'admin'].map(r => <option key={r} value={r}>{r}</option>)}
+            </Select>
+            <div className="grid grid-cols-2 gap-4">
+              <Input label="Department" value={invite.department} onChange={(e) => setInvite({ ...invite, department: e.target.value })} />
+              <Input label="Phone" value={invite.phone} onChange={(e) => setInvite({ ...invite, phone: e.target.value })} />
+            </div>
+            {inviteError && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-2.5">{inviteError}</p>}
+            <p className="text-xs text-slate-500">
+              The account is created in Supabase Auth — the member logs in with this email + password.
+              Set fine-grained module permissions afterwards via Edit. If email confirmation is enabled,
+              they must confirm the email once before their first login.
+            </p>
+          </form>
+        </Modal>
+      )}
+
       {modal}
     </div>
   )
