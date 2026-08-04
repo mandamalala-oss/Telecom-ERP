@@ -35,7 +35,7 @@ values (
   now(),
   now()
 )
-on conflict (email) do nothing;
+on conflict do nothing;
 
 -- The 012 sync trigger created the profile with role 'viewer' — promote it.
 update public.users
