@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, waitFor, cleanup } from '@testing-library/react'
 import type { ReactNode } from 'react'
-import { AuthProvider, useAuth, firstAllowedPath } from './AuthContext'
+import { AuthProvider, useAuth, firstAllowedPath, describeAuthError } from './AuthContext'
 
 // Stub the Supabase client and the CRUD api — no env vars / network needed.
 const auth = vi.hoisted(() => ({
@@ -140,5 +140,31 @@ describe('firstAllowedPath', () => {
 
   it('falls back to /login when nothing is allowed', () => {
     expect(firstAllowedPath(() => false)).toBe('/login')
+  })
+})
+
+describe('describeAuthError', () => {
+  it('uses message when present', () => {
+    expect(describeAuthError({ message: 'Invalid login credentials' })).toBe('Invalid login credentials')
+  })
+
+  it('extracts fields from message-less supabase-style errors', () => {
+    expect(describeAuthError({ status: 400, code: 'invalid_credentials' })).toBe('invalid_credentials · 400')
+  })
+
+  it('reads the message of plain Error instances (non-enumerable props)', () => {
+    expect(describeAuthError(new Error('Failed to fetch'))).toBe('Failed to fetch')
+  })
+
+  it('never renders {} for an empty object', () => {
+    const out = describeAuthError({})
+    expect(out).not.toBe('{}')
+    expect(out).toBe('[object Object]')
+  })
+
+  it('handles null, undefined and strings', () => {
+    expect(describeAuthError(null)).toBe('Unknown error')
+    expect(describeAuthError(undefined)).toBe('Unknown error')
+    expect(describeAuthError('boom')).toBe('boom')
   })
 })

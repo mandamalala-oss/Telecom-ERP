@@ -32,9 +32,38 @@ const HOME_PATHS: Array<[module: string, path: string]> = [
   ['customers', '/customers'],
 ]
 
-/** First module the current role can open — landing/fallback path (never loops). */
+/**
+ * First module the current role can open — landing/fallback path (never loops).
+ */
 export function firstAllowedPath(can: (module: string) => boolean): string {
   return HOME_PATHS.find(([m]) => can(m))?.[1] ?? '/login'
+}
+
+/**
+ * Pull a human-readable message out of ANY thrown/returned error — Supabase
+ * AuthError, plain Error (non-enumerable props — JSON.stringify gives "{}"),
+ * strings, or unexpected objects. Pure + unit-tested.
+ */
+export function describeAuthError(e: unknown): string {
+  if (e === null || e === undefined) return 'Unknown error'
+  if (typeof e === 'string') return e
+  const err = e as Record<string, any>
+  // Common fields across supabase / fetch / custom errors.
+  const parts = [
+    err.message, err.error_description, err.msg, err.hint, err.details,
+    err.code, err.status, err.name,
+  ]
+  const text = parts
+    .filter((p) => p !== undefined && p !== null && p !== '')
+    .map(String)
+    .join(' · ')
+  if (text) return text
+  if (e instanceof Error) return `${e.name}: ${e.message}`
+  try {
+    const dump = JSON.stringify(e)
+    if (dump && dump !== '{}') return dump
+  } catch { /* fall through */ }
+  return Object.prototype.toString.call(e)
 }
 
 // Real Supabase Auth (email/password) backed by the `users` profile table.
@@ -111,8 +140,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string): Promise<string | null> => {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    // Some error shapes carry no `.message` — fall back to the raw object.
-    if (error) return error.message ?? JSON.stringify(error)
+    if (error) {
+      // Log the RAW object so DevTools shows its true shape (message may be
+      // hidden in non-enumerable props or an unexpected field).
+      console.error('[login] signInWithPassword error:', error)
+      return describeAuthError(error)
+    }
     // Eagerly resolve the profile so the UI updates before the auth event lands.
     const { data } = await supabase.auth.getSession()
     const uid = data.session?.user.id

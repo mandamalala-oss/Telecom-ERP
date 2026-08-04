@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
-import { useAuth } from '@/contexts/AuthContext'
+import { describeAuthError, useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 
@@ -25,7 +25,8 @@ export function LoginPage() {
       else navigate('/', { replace: true })
     } catch (e: any) {
       // Supabase can throw too — surface the real message, not "{}".
-      setError(e?.message ?? JSON.stringify(e))
+      console.error('[login] threw:', e)
+      setError(describeAuthError(e))
     } finally {
       setSubmitting(false)
     }
