@@ -4,7 +4,7 @@ import { Input, Select, Textarea } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { makeApi } from '@/lib/api/crud'
 import { buildPayload } from '@/lib/formPayload'
-import { PERMISSION_MODULES, ROLE_PERMISSIONS } from '@/types'
+import { PERMISSION_MODULES } from '@/types'
 
 export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect' | 'sitePicker' | 'permissions'
 
@@ -240,13 +240,12 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                   <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700 max-h-64 overflow-y-auto">
                     {PERMISSION_MODULES.map(m => {
                       const stored = (values[f.key] ?? {})[m.key]
-                      // Show the EFFECTIVE level: per-user override ?? role
-                      // default — an untouched module displays what the member
-                      // really has, and clicking View/None always writes an
-                      // explicit override ('none' is stored so it beats the
-                      // role default; missing key = role default).
-                      const rolePerms = ROLE_PERMISSIONS[(initial?.role ?? '') as keyof typeof ROLE_PERMISSIONS] ?? []
-                      const level = stored ?? (rolePerms.includes('*') || rolePerms.includes(m.key) ? 'edit' : null)
+                      // Show the EFFECTIVE level: per-user grant ?? (CEO has
+                      // full access). Non-CEO members show nothing until the
+                      // CEO grants view/edit — clicking always writes an
+                      // explicit value ('none' is stored so it's an explicit
+                      // denial; missing key = no access).
+                      const level = stored ?? (initial?.role === 'CEO' ? 'edit' : null)
                       return (
                         <div key={m.key} className="flex items-center justify-between gap-2 px-3 py-1.5">
                           <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{m.label}</span>

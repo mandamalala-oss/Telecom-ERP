@@ -9,22 +9,25 @@ export interface User {
   avatar: string;
   department: string;
   phone: string;
-  /** Per-module overrides: { module: 'view' | 'edit' | 'none' }. Missing = role default. */
+  /** Per-module grants set by the CEO: { module: 'view' | 'edit' | 'none' }. Missing = no access. */
   permissions?: Record<string, StoredPermissionLevel>;
 }
 
 export type PermissionLevel = 'view' | 'edit'
 
 /** What is actually stored in the users.permissions JSONB. 'none' is stored
- * explicitly so an explicit denial beats the role default (missing = default). */
+ * explicitly as a denial; missing = no access (grants come only from the CEO). */
 export type StoredPermissionLevel = 'view' | 'edit' | 'none'
 
 /** Departments selectable in the Team form. */
 export const DEPARTMENTS = ['Direction', 'HSE', 'Logistic', 'Project'] as const
 
-/** Modules shown in the Team permission checklist (view/edit per member). */
+/** Modules shown in the Team permission matrix. Access is grant-based: only
+ * the CEO (admin, full access) grants view/edit per member; missing = no
+ * access. Roles themselves no longer imply module access. */
 export const PERMISSION_MODULES: { key: string; label: string }[] = [
   { key: 'dashboard', label: 'Dashboard' },
+  { key: 'team',      label: 'Team' },
   { key: 'crm',       label: 'CRM' },
   { key: 'customers', label: 'Customers' },
   { key: 'sites',     label: 'Telecom Sites' },
@@ -34,13 +37,6 @@ export const PERMISSION_MODULES: { key: string; label: string }[] = [
   { key: 'inventory', label: 'Inventory' },
   { key: 'finance',   label: 'Finance' },
 ]
-
-export const ROLE_PERMISSIONS: Record<Role, string[]> = {
-  CEO:         ['*'],
-  Manager:     ['dashboard','crm','customers','sites','projects','tasks','evm','inventory','finance'],
-  'Team Leader': ['sites','projects','tasks'],
-  Inspector:   ['sites','projects','tasks'],
-};
 
 // ─── CRM ────────────────────────────────────────────────────────────────────
 export type LeadStatus = 'new' | 'contacted' | 'qualified' | 'unqualified';

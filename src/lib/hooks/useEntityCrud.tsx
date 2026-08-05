@@ -18,11 +18,10 @@ export function useEntityCrud<T extends { id?: string }>(
   modalExtraLookup?: Record<string, any[]>
 ) {
   const { canEdit } = useAuth()
-  // Per-member module permission: explicit 'view'/'none' overrides block
-  // editing — only members with 'edit' may create/update/delete. Role
-  // defaults (ROLE_PERMISSIONS) grant edit, so nothing changes unless an
-  // admin explicitly demoted the member. Tables not in TABLE_MODULE are
-  // not gated (e.g. junction rows).
+  // Per-member module grant: only members with 'edit' may create/update/
+  // delete. The CEO always has edit; other members get exactly what was
+  // granted in the Team matrix. Tables not in TABLE_MODULE are not gated
+  // (e.g. junction rows).
   const moduleKey = TABLE_MODULE[table]
   const editable = moduleKey ? canEdit(moduleKey) : true
 

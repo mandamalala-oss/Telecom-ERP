@@ -161,16 +161,17 @@ describe('AuthContext — login/logout', () => {
   })
 })
 
-describe('AuthContext — can() role gating', () => {
-  it('grants modules from ROLE_PERMISSIONS for the profile role', async () => {
+describe('AuthContext — can() grant-based gating', () => {
+  it('grants only what the CEO granted — no role-based defaults', async () => {
     auth.getSession.mockResolvedValue({ data: { session: { user: { id: 'u2', email: 'pm@x.mg' } } }, error: null })
     auth.onAuthStateChange.mockReturnValue({ data: { subscription: { unsubscribe: vi.fn() } } })
+    // A Manager with NO grants has no access anywhere, despite the role name.
     listMock([{ ...profile, id: 'u2', role: 'Manager', authId: 'u2' }])
     const { result } = renderAuth()
     await waitFor(() => expect(result.current.user?.role).toBe('Manager'))
-    expect(result.current.can('projects')).toBe(true)
-    expect(result.current.can('finance')).toBe(true)
-    expect(result.current.can('team')).toBe(false) // not in Manager's list
+    expect(result.current.can('projects')).toBe(false)
+    expect(result.current.can('finance')).toBe(false)
+    expect(result.current.can('team')).toBe(false)
   })
 
   it('admin can do everything', async () => {
@@ -196,8 +197,8 @@ describe('firstAllowedPath', () => {
     expect(firstAllowedPath((m) => m === 'evm' || m === 'finance')).toBe('/evm')
   })
 
-  it('falls back to /login when nothing is allowed', () => {
-    expect(firstAllowedPath(() => false)).toBe('/login')
+  it('falls back to / when nothing is allowed (Home shows the no-access screen)', () => {
+    expect(firstAllowedPath(() => false)).toBe('/')
   })
 })
 
@@ -242,50 +243,33 @@ describe('AuthContext — per-module permission overrides', () => {
     return hook
   }
 
-  it('role default grants edit on the role’s modules', async () => {
-    const { result } = await mountWith({ ...profile, role: 'Manager', permissions: {} })
+  it('an edit grant allows editing', async () => {
+    const { result } = await mountWith({ ...profile, role: 'Manager', permissions: { projects: 'edit' } })
     expect(result.current.can('projects')).toBe(true)
     expect(result.current.canEdit('projects')).toBe(true)
     expect(result.current.permissionLevel('projects')).toBe('edit')
+    // not granted → no access at all (no role fallback)
+    expect(result.current.can('finance')).toBe(false)
     expect(result.current.can('team')).toBe(false)
   })
 
-  it('per-user override can demote edit to view', async () => {
+  it('a view grant allows viewing but blocks editing', async () => {
     const { result } = await mountWith({ ...profile, role: 'Manager', permissions: { projects: 'view' } })
     expect(result.current.can('projects')).toBe(true)
     expect(result.current.canEdit('projects')).toBe(false)
     expect(result.current.permissionLevel('projects')).toBe('view')
   })
 
-  it('per-user override can grant view beyond the role default', async () => {
-    const { result } = await mountWith({ ...profile, role: 'Inspector', permissions: { finance: 'view' } })
-    expect(result.current.can('finance')).toBe(true)
-    expect(result.current.canEdit('finance')).toBe(false)
-    // role default still applies where no override
-    expect(result.current.can('sites')).toBe(true)
-    expect(result.current.canEdit('sites')).toBe(true)
-  })
-
-  it('an explicit none override beats the role default (no access at all)', async () => {
+  it('an explicit none grant denies access', async () => {
     const { result } = await mountWith({ ...profile, role: 'Manager', permissions: { projects: 'none' } })
     expect(result.current.can('projects')).toBe(false)
     expect(result.current.canEdit('projects')).toBe(false)
     expect(result.current.permissionLevel('projects')).toBeNull()
-    // untouched modules keep the role default
-    expect(result.current.can('crm')).toBe(true)
-    expect(result.current.canEdit('crm')).toBe(true)
   })
 
-  it('an explicit view override still blocks editing', async () => {
-    const { result } = await mountWith({ ...profile, role: 'Manager', permissions: { projects: 'view' } })
-    expect(result.current.can('projects')).toBe(true)
-    expect(result.current.canEdit('projects')).toBe(false)
-    expect(result.current.permissionLevel('projects')).toBe('view')
-  })
-
-  it('admin keeps edit everywhere unless overridden', async () => {
+  it('CEO keeps full access even with restrictive grants on their row', async () => {
     const { result } = await mountWith({ ...profile, role: 'CEO', permissions: { finance: 'view' } })
     expect(result.current.canEdit('anything')).toBe(true)
-    expect(result.current.permissionLevel('finance')).toBe('view')
+    expect(result.current.permissionLevel('finance')).toBe('edit')
   })
 })

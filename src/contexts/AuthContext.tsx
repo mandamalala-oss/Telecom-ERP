@@ -1,6 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { PermissionLevel, User } from '@/types'
-import { ROLE_PERMISSIONS } from '@/types'
 import { supabase } from '@/lib/supabase'
 import { makeApi } from '@/lib/api/crud'
 
@@ -13,7 +12,7 @@ interface AuthContextType {
   /** Returns an error message, or null on success. */
   login: (email: string, password: string) => Promise<string | null>
   logout: () => Promise<void>
-  /** View access: per-user override ?? role default (ROLE_PERMISSIONS). */
+  /** View access: per-user grant (set by the CEO) — the CEO always has full access. */
   can: (module: string) => boolean
   /** Edit access: 'edit' level for the module. */
   canEdit: (module: string) => boolean
@@ -24,9 +23,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-// Ordered fallback paths: the first module the current role can open.
+// Ordered fallback paths: the first module the user was granted.
 const HOME_PATHS: Array<[module: string, path: string]> = [
   ['dashboard', '/dashboard'],
+  ['team', '/team'],
   ['sites', '/sites'],
   ['projects', '/projects'],
   ['tasks', '/tasks'],
@@ -38,10 +38,12 @@ const HOME_PATHS: Array<[module: string, path: string]> = [
 ]
 
 /**
- * First module the current role can open — landing/fallback path (never loops).
+ * First module the current user can open — landing/fallback path.
+ * Falls back to '/' (the Home route renders a "no access" screen when
+ * nothing is granted, instead of looping back to /login).
  */
 export function firstAllowedPath(can: (module: string) => boolean): string {
-  return HOME_PATHS.find(([m]) => can(m))?.[1] ?? '/login'
+  return HOME_PATHS.find(([m]) => can(m))?.[1] ?? '/'
 }
 
 // Message shown for supabase error code `email_not_confirmed` — the most
@@ -188,17 +190,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
-  // Per-module access: the member's own permission override wins; otherwise
-  // fall back to the role defaults (ROLE_PERMISSIONS grants 'edit' on every
-  // module the role can access).
+  // Grant-based access: only the CEO grants view/edit per module. The CEO
+  // (admin) always has full access; every other member gets exactly what was
+  // granted — missing or 'none' means no access, no role fallback.
   const levelFor = (u: User | null, module: string): PermissionLevel | null => {
     if (!u) return null
+    if (u.role === 'CEO') return 'edit'
     const override = u.permissions?.[module]
     if (override === 'view' || override === 'edit') return override
-    // An explicit 'none' beats the role default — no access at all.
-    if (override === 'none') return null
-    const perms = ROLE_PERMISSIONS[u.role] ?? []
-    return perms.includes('*') || perms.includes(module) ? 'edit' : null
+    return null
   }
 
   const can = (module: string) => levelFor(user, module) !== null

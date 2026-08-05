@@ -37,10 +37,10 @@ export const TABLES = {
 
 // Table → permission-module key, mirroring the route guards in App.tsx.
 // useEntityCrud consults this to gate New/Edit/Delete behind the member's
-// module permission (see ROLE_PERMISSIONS / per-user overrides in AuthContext).
+// module grant (set by the CEO in the Team permission matrix).
 // Tables absent from this map are NOT gated (e.g. junction rows).
 export const TABLE_MODULE: Record<string, string> = {
-  users: 'dashboard', // Team page is guarded by 'dashboard'
+  users: 'team', // Team page is guarded by 'team'
   leads: 'crm',
   opportunities: 'crm',
   companies: 'customers',

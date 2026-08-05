@@ -47,7 +47,7 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/inventory',  label: 'Inventory',           icon: <Package         className="w-4 h-4" />, module: 'inventory' },
       { to: '/finance',    label: 'Finance',             icon: <CreditCard      className="w-4 h-4" />, module: 'finance'   },
       { to: '/evm',        label: 'Project Controls',    icon: <BarChart3       className="w-4 h-4" />, module: 'evm'       },
-      { to: '/team',       label: 'Team',                icon: <Users           className="w-4 h-4" />, module: 'dashboard' },
+      { to: '/team',       label: 'Team',                icon: <Users           className="w-4 h-4" />, module: 'team' },
     ],
   },
 ]

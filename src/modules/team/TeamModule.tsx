@@ -12,7 +12,7 @@ import { makeApi } from '@/lib/api/crud'
 import { supabase } from '@/lib/supabase'
 import { TABLES } from '@/lib/api/entityConfigs'
 import type { User, Task, Project } from '@/types'
-import { DEPARTMENTS, PERMISSION_MODULES, ROLE_PERMISSIONS } from '@/types'
+import { DEPARTMENTS, PERMISSION_MODULES } from '@/types'
 import { clsx } from 'clsx'
 
 const usersApi = makeApi<User>('users')
@@ -25,7 +25,11 @@ const ROLE_COLOR: Record<string, string> = {
 }
 
 export function TeamModule() {
-  const { canEdit } = useAuth()
+  const { user } = useAuth()
+  // The users table is CEO-write-only (RLS: users_write_admin), so only the
+  // CEO gets the invite/edit/delete affordances — non-CEO members with 'team'
+  // access see a read-only roster.
+  const isCEO = user?.role === 'CEO'
   const { data: users, loading, error, openEdit, remove, modal, refresh: refreshUsers } = useEntityCrud<User>(TABLES.users, 'Team Member')
   const { data: tasks } = useEntity<Task>(TABLES.tasks)
   const { data: projects } = useEntity<Project>(TABLES.projects)
@@ -40,10 +44,9 @@ export function TeamModule() {
   // creates the `users` profile row, so we never INSERT a users row directly
   // (that was the source of the duplicate email_key error).
   const handleInvite = async (e: FormEvent) => {
-    // The Team page is view-guarded; creating/editing members requires 'edit'
-    // on 'dashboard' (same module key the users table is gated by).
-    if (!canEdit('dashboard')) return
     e.preventDefault()
+    // Users-table writes are CEO-only (RLS: users_write_admin).
+    if (!isCEO) return
     setInviteError(null)
     setInviting(true)
     try {
@@ -90,14 +93,13 @@ export function TeamModule() {
     }
   }
 
-  // Effective access level per module: per-user override ?? role default.
+  // Effective access per module: grant-based (set by the CEO) — the CEO
+  // always has full access; others get exactly what was granted.
   const moduleLevel = (u: User, m: string): 'view' | 'edit' | null => {
+    if (u.role === 'CEO') return 'edit'
     const override = u.permissions?.[m]
     if (override === 'view' || override === 'edit') return override
-    // An explicit 'none' beats the role default — no access at all.
-    if (override === 'none') return null
-    const perms = ROLE_PERMISSIONS[u.role] ?? []
-    return perms.includes('*') || perms.includes(m) ? 'edit' : null
+    return null
   }
 
   return (
@@ -120,7 +122,7 @@ export function TeamModule() {
       {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
       {loading && <p className="text-xs text-slate-500">Loading…</p>}
       <div className="flex justify-end">
-        {canEdit('dashboard') && (
+        {isCEO && (
           <Button icon={<Plus className="w-4 h-4"/>} onClick={() => setInviteOpen(true)}>New Team Member</Button>
         )}
       </div>
@@ -183,7 +185,7 @@ export function TeamModule() {
         <Modal open title={selected.name} onClose={() => setSelected(null)} size="lg"
           footer={
             <div className="flex justify-end gap-2">
-              {canEdit('dashboard') && (
+              {isCEO && (
                 <>
                   <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDelete(selected.id!)}>Delete</Button>
                   <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { openEdit(selected); setSelected(null) }}>Edit</Button>

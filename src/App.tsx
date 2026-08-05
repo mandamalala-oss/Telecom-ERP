@@ -37,7 +37,7 @@ function RequireAuth({ children }: { children: ReactElement }) {
   return children
 }
 
-/** Route-level module guard — mirrors the Sidebar's module keys (ROLE_PERMISSIONS). */
+/** Route-level module guard — mirrors the Sidebar's module keys. */
 function RequireModule({ module, children }: { module: string; children: ReactElement }) {
   const { can } = useAuth()
   if (!can(module)) return <Navigate to={firstAllowedPath(can)} replace />
@@ -46,10 +46,26 @@ function RequireModule({ module, children }: { module: string; children: ReactEl
 
 const guard = (module: string, el: ReactElement) => <RequireModule module={module}>{el}</RequireModule>
 
-/** First module the current role can open — used as the landing/fallback path. */
+/**
+ * Landing page: first granted module, or a "no access" screen when the CEO
+ * hasn't granted anything yet (avoids the /login redirect loop).
+ */
 function Home() {
-  const { can } = useAuth()
-  return <Navigate to={firstAllowedPath(can)} replace />
+  const { can, logout } = useAuth()
+  const path = firstAllowedPath(can)
+  if (path !== '/') return <Navigate to={path} replace />
+  return (
+    <div className="h-screen flex flex-col items-center justify-center gap-3 bg-slate-900">
+      <p className="text-slate-300 text-sm">No modules have been granted to your account yet.</p>
+      <p className="text-slate-500 text-xs">Ask the administrator (CEO) to grant you access in the Team module.</p>
+      <button
+        onClick={() => void logout()}
+        className="mt-2 text-xs font-semibold text-brand-400 hover:underline"
+      >
+        Sign out
+      </button>
+    </div>
+  )
 }
 
 export default function App() {
@@ -82,7 +98,7 @@ export default function App() {
               <Route path="inventory"  element={guard('inventory', <InventoryModule />)} />
               <Route path="finance"    element={guard('finance', <FinanceModule />)} />
               <Route path="evm"        element={guard('evm', <EVMModule />)} />
-              <Route path="team"       element={guard('dashboard', <TeamModule />)} />
+              <Route path="team"       element={guard('team', <TeamModule />)} />
               <Route path="*"          element={<Navigate to="/dashboard" replace />} />
             </Route>
           </Routes>
