@@ -116,4 +116,17 @@ describe('LoginPage', () => {
     )
     expect(screen.getByText('Email confirmed! You can now sign in.')).toBeTruthy()
   })
+
+  it('reveals and hides the password with the eye toggle', async () => {
+    authMock.useAuth.mockReturnValue({ user: null, loading: false, login: vi.fn() })
+    renderPage()
+    const password = screen.getByLabelText('Password') as HTMLInputElement
+    expect(password.type).toBe('password')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show password' }))
+    expect(password.type).toBe('text')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hide password' }))
+    expect(password.type).toBe('password')
+  })
 })

@@ -96,6 +96,7 @@ export function LoginPage() {
             label="Password"
             type="password"
             required
+            revealable
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
