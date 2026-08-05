@@ -183,8 +183,12 @@ export function TeamModule() {
         <Modal open title={selected.name} onClose={() => setSelected(null)} size="lg"
           footer={
             <div className="flex justify-end gap-2">
-              <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDelete(selected.id!)}>Delete</Button>
-              <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { openEdit(selected); setSelected(null) }}>Edit</Button>
+              {canEdit('dashboard') && (
+                <>
+                  <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDelete(selected.id!)}>Delete</Button>
+                  <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { openEdit(selected); setSelected(null) }}>Edit</Button>
+                </>
+              )}
             </div>
           }>
           <div className="space-y-5">
