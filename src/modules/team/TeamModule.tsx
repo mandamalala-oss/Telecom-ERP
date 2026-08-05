@@ -7,6 +7,7 @@ import { Input, Select } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
+import { useAuth } from '@/contexts/AuthContext'
 import { makeApi } from '@/lib/api/crud'
 import { supabase } from '@/lib/supabase'
 import { TABLES } from '@/lib/api/entityConfigs'
@@ -24,6 +25,7 @@ const ROLE_COLOR: Record<string, string> = {
 }
 
 export function TeamModule() {
+  const { canEdit } = useAuth()
   const { data: users, loading, error, openEdit, remove, modal, refresh: refreshUsers } = useEntityCrud<User>(TABLES.users, 'Team Member')
   const { data: tasks } = useEntity<Task>(TABLES.tasks)
   const { data: projects } = useEntity<Project>(TABLES.projects)
@@ -38,6 +40,9 @@ export function TeamModule() {
   // creates the `users` profile row, so we never INSERT a users row directly
   // (that was the source of the duplicate email_key error).
   const handleInvite = async (e: FormEvent) => {
+    // The Team page is view-guarded; creating/editing members requires 'edit'
+    // on 'dashboard' (same module key the users table is gated by).
+    if (!canEdit('dashboard')) return
     e.preventDefault()
     setInviteError(null)
     setInviting(true)
@@ -89,6 +94,8 @@ export function TeamModule() {
   const moduleLevel = (u: User, m: string): 'view' | 'edit' | null => {
     const override = u.permissions?.[m]
     if (override === 'view' || override === 'edit') return override
+    // An explicit 'none' beats the role default — no access at all.
+    if (override === 'none') return null
     const perms = ROLE_PERMISSIONS[u.role] ?? []
     return perms.includes('*') || perms.includes(m) ? 'edit' : null
   }
@@ -113,7 +120,9 @@ export function TeamModule() {
       {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
       {loading && <p className="text-xs text-slate-500">Loading…</p>}
       <div className="flex justify-end">
-        <Button icon={<Plus className="w-4 h-4"/>} onClick={() => setInviteOpen(true)}>New Team Member</Button>
+        {canEdit('dashboard') && (
+          <Button icon={<Plus className="w-4 h-4"/>} onClick={() => setInviteOpen(true)}>New Team Member</Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">

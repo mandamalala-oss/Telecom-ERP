@@ -1,7 +1,8 @@
 import { useState } from 'react'
+import { useAuth } from '@/contexts/AuthContext'
 import { useEntity } from './useEntity'
 import { EntityFormModal, type FieldConfig } from '@/components/crud/EntityFormModal'
-import { FIELD_CONFIGS } from '@/lib/api/entityConfigs'
+import { FIELD_CONFIGS, TABLE_MODULE } from '@/lib/api/entityConfigs'
 import { stripVirtualFields } from '@/lib/formPayload'
 
 // Drop-in hook used by every module: real Supabase list + working
@@ -16,16 +17,43 @@ export function useEntityCrud<T extends { id?: string }>(
   onUpdated?: (row: T, values: Record<string, any>) => Promise<void>,
   modalExtraLookup?: Record<string, any[]>
 ) {
+  const { canEdit } = useAuth()
+  // Per-member module permission: explicit 'view'/'none' overrides block
+  // editing — only members with 'edit' may create/update/delete. Role
+  // defaults (ROLE_PERMISSIONS) grant edit, so nothing changes unless an
+  // admin explicitly demoted the member. Tables not in TABLE_MODULE are
+  // not gated (e.g. junction rows).
+  const moduleKey = TABLE_MODULE[table]
+  const editable = moduleKey ? canEdit(moduleKey) : true
+
   const entity = useEntity<T>(table)
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<T | null>(null)
   const fields = fieldsOverride ?? FIELD_CONFIGS[table] ?? []
 
-  const openCreate = () => { setEditing(null); setModalOpen(true) }
-  const openEdit = (row: T) => { setEditing(row); setModalOpen(true) }
+  const blocked = () => {
+    console.warn(`[useEntityCrud] Edit blocked for "${table}" — user lacks 'edit' on module '${moduleKey}'`)
+    return undefined
+  }
+
+  const openCreate = () => {
+    if (!editable) { blocked(); return }
+    setEditing(null); setModalOpen(true)
+  }
+  const openEdit = (row: T) => {
+    if (!editable) { blocked(); return }
+    setEditing(row); setModalOpen(true)
+  }
   const close = () => setModalOpen(false)
 
+  // Guarded CRUD surface: same signatures, but a no-op (undefined) when the
+  // member lacks 'edit' on this table's module.
+  const create = (payload: Partial<T>) => (editable ? entity.create(payload) : blocked())
+  const update = (id: string, payload: Partial<T>) => (editable ? entity.update(id, payload) : blocked())
+  const remove = (id: string) => (editable ? entity.remove(id) : blocked())
+
   const handleSubmit = async (values: Record<string, any>) => {
+    if (!editable) return blocked()
     // Optional pre-save transform (e.g. EVM derives CPI/SPI/EAC from
     // BAC/PV/EV/AC before the row is written).
     const transformed = transformPayload ? transformPayload(values) : values
@@ -60,5 +88,5 @@ export function useEntityCrud<T extends { id?: string }>(
     />
   )
 
-  return { ...entity, openCreate, openEdit, modal, editing }
+  return { ...entity, create, update, remove, openCreate, openEdit, modal, editing }
 }

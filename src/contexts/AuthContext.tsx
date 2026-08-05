@@ -195,6 +195,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!u) return null
     const override = u.permissions?.[module]
     if (override === 'view' || override === 'edit') return override
+    // An explicit 'none' beats the role default — no access at all.
+    if (override === 'none') return null
     const perms = ROLE_PERMISSIONS[u.role] ?? []
     return perms.includes('*') || perms.includes(module) ? 'edit' : null
   }

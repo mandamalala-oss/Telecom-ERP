@@ -4,7 +4,7 @@ import { Input, Select, Textarea } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { makeApi } from '@/lib/api/crud'
 import { buildPayload } from '@/lib/formPayload'
-import { PERMISSION_MODULES } from '@/types'
+import { PERMISSION_MODULES, ROLE_PERMISSIONS } from '@/types'
 
 export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect' | 'sitePicker' | 'permissions'
 
@@ -239,25 +239,31 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</p>
                   <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700 max-h-64 overflow-y-auto">
                     {PERMISSION_MODULES.map(m => {
-                      const level = (values[f.key] ?? {})[m.key] ?? ''
+                      const stored = (values[f.key] ?? {})[m.key]
+                      // Show the EFFECTIVE level: per-user override ?? role
+                      // default — an untouched module displays what the member
+                      // really has, and clicking View/None always writes an
+                      // explicit override ('none' is stored so it beats the
+                      // role default; missing key = role default).
+                      const rolePerms = ROLE_PERMISSIONS[(initial?.role ?? '') as keyof typeof ROLE_PERMISSIONS] ?? []
+                      const level = stored ?? (rolePerms.includes('*') || rolePerms.includes(m.key) ? 'edit' : null)
                       return (
                         <div key={m.key} className="flex items-center justify-between gap-2 px-3 py-1.5">
                           <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">{m.label}</span>
                           <div className="flex items-center gap-3 text-xs">
-                            {(['', 'view', 'edit'] as const).map(lv => (
-                              <label key={lv || 'none'} className="flex items-center gap-1 cursor-pointer text-slate-500 dark:text-slate-400">
+                            {(['none', 'view', 'edit'] as const).map(lv => (
+                              <label key={lv} className="flex items-center gap-1 cursor-pointer text-slate-500 dark:text-slate-400">
                                 <input
                                   type="radio"
                                   name={`perm-${f.key}-${m.key}`}
                                   checked={level === lv}
                                   onChange={() => {
                                     const next = { ...(values[f.key] ?? {}) }
-                                    if (lv === '') delete next[m.key]
-                                    else next[m.key] = lv
+                                    next[m.key] = lv
                                     set(f.key, next)
                                   }}
                                 />
-                                {lv === '' ? 'None' : lv === 'view' ? 'View' : 'Edit'}
+                                {lv === 'none' ? 'None' : lv === 'view' ? 'View' : 'Edit'}
                               </label>
                             ))}
                           </div>

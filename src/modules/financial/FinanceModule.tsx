@@ -86,7 +86,7 @@ export function FinanceModule() {
     if (inv) await updateInvoice(inv.id!, { paid: Math.max(0, (inv.paid ?? 0) - (pay.amount ?? 0)) })
   }
 
-  const handleDelete = async (label: string, doDelete: () => Promise<void>) => {
+  const handleDelete = async (label: string, doDelete: () => Promise<void> | void) => {
     if (!confirm(`Delete this ${label}?`)) return
     try {
       setActionError(null)

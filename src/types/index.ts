@@ -9,11 +9,15 @@ export interface User {
   avatar: string;
   department: string;
   phone: string;
-  /** Per-module overrides: { module: 'view' | 'edit' }. Missing = role default. */
-  permissions?: Record<string, PermissionLevel>;
+  /** Per-module overrides: { module: 'view' | 'edit' | 'none' }. Missing = role default. */
+  permissions?: Record<string, StoredPermissionLevel>;
 }
 
 export type PermissionLevel = 'view' | 'edit'
+
+/** What is actually stored in the users.permissions JSONB. 'none' is stored
+ * explicitly so an explicit denial beats the role default (missing = default). */
+export type StoredPermissionLevel = 'view' | 'edit' | 'none'
 
 /** Departments selectable in the Team form. */
 export const DEPARTMENTS = ['Direction', 'HSE', 'Logistic', 'Project'] as const

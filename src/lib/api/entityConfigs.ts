@@ -35,6 +35,42 @@ export const TABLES = {
   contracts: 'contracts',
 } as const
 
+// Table → permission-module key, mirroring the route guards in App.tsx.
+// useEntityCrud consults this to gate New/Edit/Delete behind the member's
+// module permission (see ROLE_PERMISSIONS / per-user overrides in AuthContext).
+// Tables absent from this map are NOT gated (e.g. junction rows).
+export const TABLE_MODULE: Record<string, string> = {
+  users: 'dashboard', // Team page is guarded by 'dashboard'
+  leads: 'crm',
+  opportunities: 'crm',
+  companies: 'customers',
+  contacts: 'customers',
+  sites: 'sites',
+  projects: 'projects',
+  tasks: 'tasks',
+  warehouses: 'inventory',
+  inventoryItems: 'inventory',
+  stockMovements: 'inventory',
+  quotes: 'finance',
+  invoices: 'finance',
+  purchaseOrders: 'finance',
+  payments: 'finance',
+  evmMetrics: 'evm',
+  surveyReports: 'projects', // Field Ops is guarded by 'projects'
+  installationRecords: 'projects',
+  integrationRecords: 'projects',
+  atpTemplates: 'projects', // ATP is guarded by 'projects'
+  atpRecords: 'projects',
+  boqs: 'finance', // BOQ is guarded by 'finance'
+  assets: 'inventory',
+  employees: 'dashboard', // Resources is guarded by 'dashboard'
+  vehicles: 'dashboard',
+  tools: 'dashboard',
+  purchaseRequests: 'finance', // Procurement is guarded by 'finance'
+  subcontractors: 'dashboard', // Subcontractors is guarded by 'dashboard'
+  documents: 'dashboard', // Documents is guarded by 'dashboard'
+}
+
 const REGIONS = ['Antananarivo', 'Fianarantsoa', 'Toamasina', 'Mahajanga', 'Toliara', 'Antsiranana', 'Antsirabe', 'Morondava']
 const TECHS = ['2G', '3G', '4G', '4G+', '5G', 'MW', 'VSAT']
 

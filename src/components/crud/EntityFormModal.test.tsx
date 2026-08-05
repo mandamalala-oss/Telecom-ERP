@@ -307,17 +307,19 @@ describe('EntityFormModal — permissions matrix', () => {
     expect(within(row).getByRole('radio', { name: 'None' })).toBeTruthy()
   })
 
-  it('saves the selected levels as an object and drops None', async () => {
+  it('saves view/edit/none explicitly (none must beat role defaults)', async () => {
     const onSubmit = renderForm([permField, { key: 'name', label: 'Name', type: 'text' }])
     await userEvent.type(screen.getByLabelText('Name'), 'Ada')
-    // Set Projects → Edit, Sites → View
+    // Set Projects → Edit, Sites → View, Finance → None
     const projectRow = screen.getByText('Projects').closest('div')!
     await userEvent.click(within(projectRow).getByRole('radio', { name: 'Edit' }))
     const sitesRow = screen.getByText('Telecom Sites').closest('div')!
     await userEvent.click(within(sitesRow).getByRole('radio', { name: 'View' }))
+    const financeRow = screen.getByText('Finance').closest('div')!
+    await userEvent.click(within(financeRow).getByRole('radio', { name: 'None' }))
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
-    expect(onSubmit.mock.calls[0][0].permissions).toEqual({ projects: 'edit', sites: 'view' })
+    expect(onSubmit.mock.calls[0][0].permissions).toEqual({ projects: 'edit', sites: 'view', finance: 'none' })
   })
 
   it('pre-fills the matrix from the edit initial', async () => {

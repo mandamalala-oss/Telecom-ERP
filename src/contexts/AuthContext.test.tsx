@@ -266,6 +266,23 @@ describe('AuthContext — per-module permission overrides', () => {
     expect(result.current.canEdit('sites')).toBe(true)
   })
 
+  it('an explicit none override beats the role default (no access at all)', async () => {
+    const { result } = await mountWith({ ...profile, role: 'Manager', permissions: { projects: 'none' } })
+    expect(result.current.can('projects')).toBe(false)
+    expect(result.current.canEdit('projects')).toBe(false)
+    expect(result.current.permissionLevel('projects')).toBeNull()
+    // untouched modules keep the role default
+    expect(result.current.can('crm')).toBe(true)
+    expect(result.current.canEdit('crm')).toBe(true)
+  })
+
+  it('an explicit view override still blocks editing', async () => {
+    const { result } = await mountWith({ ...profile, role: 'Manager', permissions: { projects: 'view' } })
+    expect(result.current.can('projects')).toBe(true)
+    expect(result.current.canEdit('projects')).toBe(false)
+    expect(result.current.permissionLevel('projects')).toBe('view')
+  })
+
   it('admin keeps edit everywhere unless overridden', async () => {
     const { result } = await mountWith({ ...profile, role: 'CEO', permissions: { finance: 'view' } })
     expect(result.current.canEdit('anything')).toBe(true)
