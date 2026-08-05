@@ -14,7 +14,8 @@ import { describeAuthError } from '@/contexts/AuthContext'
  *   3. email link — #token_hash=…&type=… → NOT auto-handled; verifyOtp() below
  *
  * So we first wait for init (getSession) and only manually verify whatever is
- * still in the URL. Every success path redirects to /login with a message.
+ * still in the URL. On success the just-created session is signed back out so
+ * the user lands on /login with the confirmation message and signs in fresh.
  */
 export function ConfirmPage() {
   const navigate = useNavigate()
@@ -43,7 +44,10 @@ export function ConfirmPage() {
         const { data } = await supabase.auth.getSession()
         if (cancelled) return
         if (data.session) {
-          navigate('/login', { replace: true, state: { confirmed: true } })
+          // Already signed in — an implicit/PKCE token was consumed by
+          // detectSessionInUrl and auto-login takes over (LoginPage bounces
+          // signed-in users to the app), so no confirmation flash on /login.
+          navigate('/login', { replace: true })
           return
         }
 
@@ -65,7 +69,19 @@ export function ConfirmPage() {
           throw new Error('No confirmation token found in the URL.')
         }
 
-        if (!cancelled) navigate('/login', { replace: true, state: { confirmed: true } })
+        if (cancelled) return
+        // verifyOtp/exchangeCodeForSession just created a session — sign it
+        // back out (this browser only) so the user lands on /login with the
+        // "Email confirmed!" message and logs in fresh. If sign-out itself
+        // fails, the confirmation still succeeded: don't turn it into an
+        // error page (a surviving session just means auto-login takes over).
+        try {
+          await supabase.auth.signOut({ scope: 'local' })
+        } catch {
+          /* ignore — confirmation already completed */
+        }
+        if (cancelled) return
+        navigate('/login', { replace: true, state: { confirmed: true } })
       } catch (e) {
         if (!cancelled) setError(describeAuthError(e))
       }

@@ -8,6 +8,7 @@ const auth = vi.hoisted(() => ({
   getSession: vi.fn(),
   exchangeCodeForSession: vi.fn(),
   verifyOtp: vi.fn(),
+  signOut: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase', () => ({ supabase: { auth } }))
@@ -32,31 +33,42 @@ beforeEach(() => {
   auth.getSession.mockResolvedValue({ data: { session: null }, error: null })
   auth.exchangeCodeForSession.mockResolvedValue({ data: { session }, error: null })
   auth.verifyOtp.mockResolvedValue({ data: { session }, error: null })
+  auth.signOut.mockResolvedValue({ error: null })
 })
 // vitest runs with globals:false — RTL auto-cleanup never registers.
 afterEach(() => cleanup())
 
 describe('ConfirmPage', () => {
-  it('exchanges a PKCE ?code=… token and redirects to /login', async () => {
+  it('exchanges a PKCE ?code=… token, signs out, and redirects to /login', async () => {
     renderAt('/auth/confirm?code=abc123')
     expect(await screen.findByText('LOGIN PAGE')).toBeTruthy()
     expect(auth.exchangeCodeForSession).toHaveBeenCalledWith('abc123')
+    expect(auth.signOut).toHaveBeenCalledWith({ scope: 'local' })
     expect(auth.verifyOtp).not.toHaveBeenCalled()
   })
 
-  it('verifies a #token_hash=…&type=… email link and redirects to /login', async () => {
+  it('verifies a #token_hash=…&type=… email link, signs out, and redirects to /login', async () => {
     renderAt('/auth/confirm#token_hash=xyz&type=email')
     expect(await screen.findByText('LOGIN PAGE')).toBeTruthy()
     expect(auth.verifyOtp).toHaveBeenCalledWith({ token_hash: 'xyz', type: 'email' })
+    expect(auth.signOut).toHaveBeenCalledWith({ scope: 'local' })
     expect(auth.exchangeCodeForSession).not.toHaveBeenCalled()
   })
 
-  it('short-circuits when detectSessionInUrl already established a session', async () => {
+  it('verifies token_hash+type from URL query params (the email-link format)', async () => {
+    renderAt('/auth/confirm?token_hash=xyz&type=signup')
+    expect(await screen.findByText('LOGIN PAGE')).toBeTruthy()
+    expect(auth.verifyOtp).toHaveBeenCalledWith({ token_hash: 'xyz', type: 'signup' })
+    expect(auth.signOut).toHaveBeenCalledWith({ scope: 'local' })
+  })
+
+  it('short-circuits when detectSessionInUrl already established a session (no sign-out)', async () => {
     auth.getSession.mockResolvedValue({ data: { session }, error: null })
     renderAt('/auth/confirm#access_token=at&type=signup')
     expect(await screen.findByText('LOGIN PAGE')).toBeTruthy()
     expect(auth.exchangeCodeForSession).not.toHaveBeenCalled()
     expect(auth.verifyOtp).not.toHaveBeenCalled()
+    expect(auth.signOut).not.toHaveBeenCalled()
   })
 
   it('shows the URL error for an expired/invalid link', async () => {

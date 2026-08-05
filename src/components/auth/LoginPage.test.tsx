@@ -67,6 +67,6 @@ describe('LoginPage', () => {
         <LoginPage />
       </MemoryRouter>
     )
-    expect(screen.getByText('Email confirmed — you can now log in')).toBeTruthy()
+    expect(screen.getByText('Email confirmed! You can now sign in.')).toBeTruthy()
   })
 })

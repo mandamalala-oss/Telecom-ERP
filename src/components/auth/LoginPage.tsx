@@ -48,7 +48,7 @@ export function LoginPage() {
 
         {confirmed && (
           <p className="text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 rounded-lg p-2.5 mb-4">
-            Email confirmed — you can now log in
+            Email confirmed! You can now sign in.
           </p>
         )}
 

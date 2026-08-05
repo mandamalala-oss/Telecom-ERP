@@ -114,6 +114,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const uid = session.user.id
         const profile = await profileFor(uid)
         if (cancelled) return
+        // The session may have been signed out or replaced (e.g. another tab)
+        // while the profile lookup was in flight — don't restore a stale user.
+        const { data: now } = await supabase.auth.getSession()
+        if (cancelled) return
+        if (now.session?.user.id !== uid) { finish(); return }
         setUser(profile ?? {
           id: uid,
           name: session.user.email ?? 'User',
@@ -134,15 +139,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const uid = session.user.id
       profileFor(uid).then((profile) => {
         if (cancelled) return
-        setUser(profile ?? {
-          id: uid,
-          name: session.user.email ?? 'User',
-          email: session.user.email ?? '',
-          role: 'Team Leader',
-          avatar: '',
-          department: '',
-          phone: '',
-        } as User)
+        // The session may have been signed out or replaced while the profile
+        // lookup was in flight (e.g. /auth/confirm signs the fresh session out
+        // right after verifyOtp) — never resurrect a stale user.
+        supabase.auth.getSession().then(({ data }) => {
+          if (cancelled) return
+          if (data.session?.user.id !== uid) return
+          setUser(profile ?? {
+            id: uid,
+            name: session.user.email ?? 'User',
+            email: session.user.email ?? '',
+            role: 'Team Leader',
+            avatar: '',
+            department: '',
+            phone: '',
+          } as User)
+        }).catch(() => {})
       })
       void refreshUsers().catch(() => {})
     })

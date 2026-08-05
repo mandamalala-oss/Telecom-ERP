@@ -10,13 +10,21 @@ const auth = vi.hoisted(() => ({
   onAuthStateChange: vi.fn(),
   signInWithPassword: vi.fn(),
   signOut: vi.fn(),
+  exchangeCodeForSession: vi.fn(),
+  verifyOtp: vi.fn(),
 }))
 // makeApi() is called at AuthContext import time, so the mock returns a list
 // fn that reads a mutable rows slot — tests swap the value, not the mock.
+// `deferList` lets a test hold the profile lookup open (for the stale-user race).
 const mocks = vi.hoisted(() => {
   const rows: { value: unknown[] } = { value: [] }
-  const makeApi = vi.fn(() => ({ list: vi.fn(async () => rows.value) }))
-  return { makeApi, rows }
+  let deferred: Promise<unknown[]> | null = null
+  const makeApi = vi.fn(() => ({ list: vi.fn(() => (deferred ?? Promise.resolve(rows.value))) }))
+  return {
+    makeApi,
+    rows,
+    deferList: (p: Promise<unknown[]> | null) => { deferred = p },
+  }
 })
 
 vi.mock('@/lib/supabase', () => ({ supabase: { auth } }))
@@ -37,7 +45,10 @@ function renderAuth() {
   })
 }
 
-beforeEach(() => { vi.clearAllMocks() })
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.deferList(null)
+})
 // vitest runs with globals:false — RTL auto-cleanup never registers.
 afterEach(() => cleanup())
 
@@ -100,6 +111,53 @@ describe('AuthContext — login/logout', () => {
     await result.current.logout()
     expect(auth.signOut).toHaveBeenCalled()
     await waitFor(() => expect(result.current.user).toBeNull())
+  })
+
+  it('does not resurrect a stale user when a profile lookup resolves after sign-out', async () => {
+    // Capture the auth-state callback so the test can drive SIGNED_IN/SIGNED_OUT.
+    let onEvent: ((event: string, session: any) => void) | undefined
+    auth.onAuthStateChange.mockImplementation((handler: any) => {
+      onEvent = handler
+      return { data: { subscription: { unsubscribe: vi.fn() } } }
+    })
+    auth.getSession.mockResolvedValue({ data: { session: null }, error: null })
+    const { result } = renderAuth()
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // SIGNED_IN fires, starting a profile lookup we keep hanging…
+    let resolveList!: (v: unknown[]) => void
+    mocks.deferList(new Promise<unknown[]>((r) => { resolveList = r }))
+    onEvent?.('SIGNED_IN', { user: { id: 'u1', email: 'ada@x.mg' } })
+    // …then the session is signed out (e.g. /auth/confirm right after verifyOtp)…
+    onEvent?.('SIGNED_OUT', null)
+    expect(result.current.user).toBeNull()
+
+    // …and finally the stale profile lookup lands. It must NOT set the user.
+    resolveList([profile])
+    await new Promise((r) => setTimeout(r, 0))
+    expect(result.current.user).toBeNull()
+  })
+
+  it('does not apply a stale profile when the session was replaced by another user', async () => {
+    let onEvent: ((event: string, session: any) => void) | undefined
+    auth.onAuthStateChange.mockImplementation((handler: any) => {
+      onEvent = handler
+      return { data: { subscription: { unsubscribe: vi.fn() } } }
+    })
+    auth.getSession.mockResolvedValue({ data: { session: null }, error: null })
+    const { result } = renderAuth()
+    await waitFor(() => expect(result.current.loading).toBe(false))
+
+    // SIGNED_IN for u1 starts a hanging profile lookup…
+    let resolveList!: (v: unknown[]) => void
+    mocks.deferList(new Promise<unknown[]>((r) => { resolveList = r }))
+    onEvent?.('SIGNED_IN', { user: { id: 'u1', email: 'ada@x.mg' } })
+    // …meanwhile the session belongs to a different user…
+    auth.getSession.mockResolvedValue({ data: { session: { user: { id: 'u2', email: 'bob@x.mg' } } }, error: null })
+    // …and u1's profile lookup lands. It must NOT overwrite the current user.
+    resolveList([profile])
+    await new Promise((r) => setTimeout(r, 0))
+    expect(result.current.user).toBeNull()
   })
 })
 
