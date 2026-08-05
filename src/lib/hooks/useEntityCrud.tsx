@@ -87,5 +87,5 @@ export function useEntityCrud<T extends { id?: string }>(
     />
   )
 
-  return { ...entity, create, update, remove, openCreate, openEdit, modal, editing }
+  return { ...entity, create, update, remove, openCreate, openEdit, modal, editing, editable }
 }

@@ -91,7 +91,7 @@ export function ProjectsModule() {
     await refreshProjectSites()
   }
 
-  const { data: projects, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<Project>(
+  const { data: projects, loading, error, openCreate, openEdit, remove, modal, editable } = useEntityCrud<Project>(
     TABLES.projects, 'Project', undefined, syncSites, undefined, syncSites
   )
   const [selected, setSelected] = useState<Project | null>(null)
@@ -216,7 +216,7 @@ export function ProjectsModule() {
             </button>
           ))}
         </div>
-        <Button icon={<Plus className="w-4 h-4"/>} onClick={openCreate}>New Project</Button>
+        {editable && <Button icon={<Plus className="w-4 h-4"/>} onClick={openCreate}>New Project</Button>}
       </div>
       {error && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{error}</div>}
       {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
@@ -302,8 +302,12 @@ export function ProjectsModule() {
         <Modal open title={selected.name} onClose={() => setSelected(null)} size="xl"
           footer={
             <div className="flex justify-end gap-2">
-              <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDelete(selected.id!)}>Delete</Button>
-              <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { openEdit({ ...selected, siteId: selSites[0]?.id ?? '' }); setSelected(null) }}>Edit</Button>
+              {editable && (
+                <>
+                  <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDelete(selected.id!)}>Delete</Button>
+                  <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { openEdit({ ...selected, siteId: selSites[0]?.id ?? '' }); setSelected(null) }}>Edit</Button>
+                </>
+              )}
             </div>
           }>
           <div className="space-y-5">
