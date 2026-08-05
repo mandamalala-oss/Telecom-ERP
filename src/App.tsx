@@ -4,6 +4,7 @@ import { AuthProvider, useAuth, firstAllowedPath } from '@/contexts/AuthContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
 import { Layout }        from '@/components/layout/Layout'
 import { LoginPage }     from '@/components/auth/LoginPage'
+import { ConfirmPage }   from '@/components/auth/ConfirmPage'
 
 // V1 Modules
 import { ExecutiveDashboard } from '@/modules/dashboards/ExecutiveDashboard'
@@ -58,6 +59,7 @@ export default function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/auth/confirm" element={<ConfirmPage />} />
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<Home />} />
               {/* V2 - Primary (module keys mirror Sidebar) */}

@@ -148,6 +148,11 @@ describe('describeAuthError', () => {
     expect(describeAuthError({ message: 'Invalid login credentials' })).toBe('Invalid login credentials')
   })
 
+  it('gives actionable guidance for email_not_confirmed', () => {
+    expect(describeAuthError({ message: 'Email not confirmed', code: 'email_not_confirmed', status: 400 }))
+      .toBe('Email not confirmed — check your inbox and click the confirmation link before signing in.')
+  })
+
   it('extracts fields from message-less supabase-style errors', () => {
     expect(describeAuthError({ status: 400, code: 'invalid_credentials' })).toBe('invalid_credentials · 400')
   })

@@ -13,4 +13,11 @@ if (!supabaseUrl || !supabaseKey) {
   )
 }
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+export const supabase = createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    // Parse confirmation/oauth tokens out of the URL (hash or query) during
+    // client initialization — the /auth/confirm page then only has to deal
+    // with whatever detection did NOT already consume (e.g. token_hash links).
+    detectSessionInUrl: true,
+  },
+})

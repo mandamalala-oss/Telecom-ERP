@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Navigate, useNavigate } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { describeAuthError, useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -7,6 +7,9 @@ import { Input } from '@/components/ui/Input'
 export function LoginPage() {
   const { user, loading, login } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
+  // Set by /auth/confirm after a successful email confirmation.
+  const confirmed = (location.state as { confirmed?: boolean } | null)?.confirmed === true
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -42,6 +45,12 @@ export function LoginPage() {
           <h1 className="text-white font-bold text-xl">TelecomERP</h1>
           <p className="text-slate-400 text-sm">Sign in to continue</p>
         </div>
+
+        {confirmed && (
+          <p className="text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 rounded-lg p-2.5 mb-4">
+            Email confirmed — you can now log in
+          </p>
+        )}
 
         <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl p-6 space-y-4">
           <Input

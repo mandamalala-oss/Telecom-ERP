@@ -46,7 +46,12 @@ export function TeamModule() {
       const { data, error } = await supabase.auth.signUp({
         email,
         password: invite.password,
-        options: { data: { name: invite.name.trim() } },
+        options: {
+          data: { name: invite.name.trim() },
+          // Confirmation link goes through the /auth/confirm handler, which
+          // verifies the token and redirects to /login with a success message.
+          emailRedirectTo: `${window.location.origin}/auth/confirm`,
+        },
       })
       if (error) throw error
       const uid = data.user?.id

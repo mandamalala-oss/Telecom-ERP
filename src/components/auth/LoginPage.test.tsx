@@ -59,4 +59,14 @@ describe('LoginPage', () => {
     // login form must NOT be present.
     expect(screen.queryByLabelText('Password')).toBeNull()
   })
+
+  it('shows the email-confirmed message when arriving from /auth/confirm', () => {
+    authMock.useAuth.mockReturnValue({ user: null, loading: false, login: vi.fn() })
+    render(
+      <MemoryRouter initialEntries={[{ pathname: '/login', state: { confirmed: true } }]}>
+        <LoginPage />
+      </MemoryRouter>
+    )
+    expect(screen.getByText('Email confirmed — you can now log in')).toBeTruthy()
+  })
 })

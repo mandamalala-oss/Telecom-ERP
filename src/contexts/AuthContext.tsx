@@ -53,6 +53,13 @@ export function describeAuthError(e: unknown): string {
   if (e === null || e === undefined) return 'Unknown error'
   if (typeof e === 'string') return e
   const err = e as Record<string, any>
+  // Most common local-dev trip-up: the account was invited but the
+  // confirmation link never completed (e.g. the redirect origin isn't in the
+  // project's Redirect URLs allowlist). Say what to do instead of dumping the
+  // raw Supabase error.
+  if (err.code === 'email_not_confirmed') {
+    return 'Email not confirmed — check your inbox and click the confirmation link before signing in.'
+  }
   // Common fields across supabase / fetch / custom errors.
   const parts = [
     err.message, err.error_description, err.msg, err.hint, err.details,
