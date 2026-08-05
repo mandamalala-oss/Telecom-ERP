@@ -9,7 +9,23 @@ const authMock = vi.hoisted(() => ({
   useAuth: vi.fn(),
 }))
 
-vi.mock('@/contexts/AuthContext', () => ({ useAuth: authMock.useAuth }))
+const EMAIL_NOT_CONFIRMED_MESSAGE = vi.hoisted(
+  () => 'Email not confirmed — check your inbox and click the confirmation link before signing in.'
+)
+
+const supabaseAuthMock = vi.hoisted(() => ({
+  resend: vi.fn(),
+}))
+
+vi.mock('@/contexts/AuthContext', () => ({
+  useAuth: authMock.useAuth,
+  EMAIL_NOT_CONFIRMED_MESSAGE,
+  // Minimal stand-in matching the real pure function for the cases tested here.
+  describeAuthError: (e: any) => (e && typeof e === 'object' && 'message' in e ? e.message : String(e)),
+}))
+// LoginPage talks to supabase.auth.resend directly — stub the client so the
+// real createClient (which throws without env vars) never runs.
+vi.mock('@/lib/supabase', () => ({ supabase: { auth: supabaseAuthMock } }))
 
 function renderPage() {
   return render(
@@ -22,6 +38,14 @@ function renderPage() {
 beforeEach(() => { authMock.useAuth.mockReset() })
 // vitest runs with globals:false — RTL auto-cleanup never registers.
 afterEach(() => cleanup())
+
+async function signInWith(login: ReturnType<typeof vi.fn>, email = 'ada@x.mg', password = 'secret') {
+  authMock.useAuth.mockReturnValue({ user: null, loading: false, login })
+  renderPage()
+  await userEvent.type(screen.getByLabelText('Email'), email)
+  await userEvent.type(screen.getByLabelText('Password'), password)
+  await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+}
 
 describe('LoginPage', () => {
   it('renders the email and password fields', () => {
@@ -43,13 +67,36 @@ describe('LoginPage', () => {
   })
 
   it('shows the error returned by login()', async () => {
-    const login = vi.fn(async () => 'Invalid login credentials')
-    authMock.useAuth.mockReturnValue({ user: null, loading: false, login })
-    renderPage()
-    await userEvent.type(screen.getByLabelText('Email'), 'ada@x.mg')
-    await userEvent.type(screen.getByLabelText('Password'), 'wrong')
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
+    await signInWith(vi.fn(async () => 'Invalid login credentials'), 'ada@x.mg', 'wrong')
     expect(await screen.findByText('Invalid login credentials')).toBeTruthy()
+  })
+
+  it('offers a resend action for email_not_confirmed and resends via supabase.auth.resend', async () => {
+    supabaseAuthMock.resend.mockResolvedValue({ error: null })
+    await signInWith(vi.fn(async () => EMAIL_NOT_CONFIRMED_MESSAGE))
+    const resendButton = await screen.findByRole('button', { name: /resend confirmation email/i })
+    await userEvent.click(resendButton)
+    await waitFor(() =>
+      expect(supabaseAuthMock.resend).toHaveBeenCalledWith({
+        type: 'signup',
+        email: 'ada@x.mg',
+        options: { emailRedirectTo: expect.stringMatching(/\/auth\/confirm$/) },
+      })
+    )
+    expect(await screen.findByText(/Confirmation email sent — check your inbox/)).toBeTruthy()
+  })
+
+  it('does not offer resend for other login errors', async () => {
+    await signInWith(vi.fn(async () => 'Invalid login credentials'), 'ada@x.mg', 'wrong')
+    expect(await screen.findByText('Invalid login credentials')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /resend confirmation email/i })).toBeNull()
+  })
+
+  it('shows resend feedback when resend fails', async () => {
+    supabaseAuthMock.resend.mockResolvedValue({ data: null, error: { message: 'Email is already confirmed' } })
+    await signInWith(vi.fn(async () => EMAIL_NOT_CONFIRMED_MESSAGE))
+    await userEvent.click(await screen.findByRole('button', { name: /resend confirmation email/i }))
+    expect(await screen.findByText('Email is already confirmed')).toBeTruthy()
   })
 
   it('redirects to the app when already authenticated', async () => {

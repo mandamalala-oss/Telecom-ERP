@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
-import { describeAuthError, useAuth } from '@/contexts/AuthContext'
+import { describeAuthError, useAuth, EMAIL_NOT_CONFIRMED_MESSAGE } from '@/contexts/AuthContext'
+import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 
@@ -14,6 +15,11 @@ export function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [resending, setResending] = useState(false)
+  const [resend, setResend] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
+  // Offer a resend action when Supabase blocked the login because the email
+  // was never confirmed (see EMAIL_NOT_CONFIRMED_MESSAGE in AuthContext).
+  const needsConfirmation = error === EMAIL_NOT_CONFIRMED_MESSAGE
 
   // Already signed in? Send them straight to the app.
   if (!loading && user) return <Navigate to="/" replace />
@@ -32,6 +38,30 @@ export function LoginPage() {
       setError(describeAuthError(e))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  const handleResend = async () => {
+    const address = email.trim()
+    if (!address) {
+      setResend({ kind: 'error', text: 'Enter your email address above, then resend.' })
+      return
+    }
+    setResending(true)
+    setResend(null)
+    try {
+      const { error } = await supabase.auth.resend({
+        type: 'signup',
+        email: address,
+        options: { emailRedirectTo: `${window.location.origin}/auth/confirm` },
+      })
+      if (error) throw error
+      setResend({ kind: 'ok', text: 'Confirmation email sent — check your inbox.' })
+    } catch (e: any) {
+      console.error('[login] resend confirmation error:', e)
+      setResend({ kind: 'error', text: describeAuthError(e) })
+    } finally {
+      setResending(false)
     }
   }
 
@@ -72,6 +102,23 @@ export function LoginPage() {
             placeholder="••••••••"
           />
           {error && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-2.5">{error}</p>}
+          {needsConfirmation && (
+            <div className="text-center">
+              <button
+                type="button"
+                onClick={handleResend}
+                disabled={resending}
+                className="text-xs font-semibold text-brand-600 dark:text-brand-400 hover:underline disabled:opacity-50"
+              >
+                {resending ? 'Sending…' : "Didn't get it? Resend confirmation email"}
+              </button>
+              {resend && (
+                <p className={`text-xs mt-1.5 ${resend.kind === 'ok' ? 'text-green-600 dark:text-green-400' : 'text-red-500'}`}>
+                  {resend.text}
+                </p>
+              )}
+            </div>
+          )}
           <Button type="submit" className="w-full" disabled={submitting}>
             {submitting ? 'Signing in…' : 'Sign in'}
           </Button>

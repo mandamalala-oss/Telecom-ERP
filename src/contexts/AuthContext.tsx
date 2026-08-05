@@ -44,6 +44,13 @@ export function firstAllowedPath(can: (module: string) => boolean): string {
   return HOME_PATHS.find(([m]) => can(m))?.[1] ?? '/login'
 }
 
+// Message shown for supabase error code `email_not_confirmed` — the most
+// common trip-up: the account was invited but the confirmation link never
+// completed (e.g. the redirect origin isn't in the project's Redirect URLs
+// allowlist). LoginPage matches on this constant to offer a resend action.
+export const EMAIL_NOT_CONFIRMED_MESSAGE =
+  'Email not confirmed — check your inbox and click the confirmation link before signing in.'
+
 /**
  * Pull a human-readable message out of ANY thrown/returned error — Supabase
  * AuthError, plain Error (non-enumerable props — JSON.stringify gives "{}"),
@@ -53,13 +60,8 @@ export function describeAuthError(e: unknown): string {
   if (e === null || e === undefined) return 'Unknown error'
   if (typeof e === 'string') return e
   const err = e as Record<string, any>
-  // Most common local-dev trip-up: the account was invited but the
-  // confirmation link never completed (e.g. the redirect origin isn't in the
-  // project's Redirect URLs allowlist). Say what to do instead of dumping the
-  // raw Supabase error.
-  if (err.code === 'email_not_confirmed') {
-    return 'Email not confirmed — check your inbox and click the confirmation link before signing in.'
-  }
+  // Say what to do instead of dumping the raw Supabase error.
+  if (err.code === 'email_not_confirmed') return EMAIL_NOT_CONFIRMED_MESSAGE
   // Common fields across supabase / fetch / custom errors.
   const parts = [
     err.message, err.error_description, err.msg, err.hint, err.details,
