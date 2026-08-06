@@ -139,6 +139,7 @@ Run: `npm test` (one-shot) / `npm run test:watch`. Config: `vitest.config.ts` (d
 | `src/components/auth/LoginPage.test.tsx` | Login screen: renders fields, submits credentials to `login()`, surfaces auth errors, redirects when already signed in, shows the email-confirmed banner from `/auth/confirm`, **password reveal/hide eye toggle**, **resend-confirmation** action for `email_not_confirmed` (success + failure feedback, no resend for other errors) |
 | `src/components/auth/ConfirmPage.test.tsx` | Email confirmation handler: PKCE `?code=` exchange, `token_hash&type=` verifyOtp (query + hash), signs the fresh session out so `/login` shows "Email confirmed!", already-signed-in short-circuit (detectSessionInUrl, no sign-out), URL error beats stale session, verify/exchange failure paths, no-token error |
 | `src/lib/hooks/useEntityCrud.test.tsx` | Module-permission gating: create/update/remove/openEdit allowed with `edit`, blocked (no-op, modal never opens) without, unmapped tables not gated |
+| `src/lib/hooks/useSupplyItems.test.ts` | Supply/trading goods lines (project_supply_items): load with client-side totals (cost/selling/margin), delete+insert save with empty-row cleaning, no-project no-op, totals math |
 | `src/lib/evm.test.ts` | `deriveEVM`; `evFromProgress(bac, pct)`; `appendSnapshot`; `rollupCustomerEVM`; `combineEVMRecords` (sum + re-derive + benefit); `groupEVMByProject` (STARLINK-style grouping, split by customer); `mergeHistories` (same-date sum) |
 
 **Key runtime facts the tests encode:**
@@ -146,6 +147,7 @@ Run: `npm test` (one-shot) / `npm run test:watch`. Config: `vitest.config.ts` (d
 - `populate` may target **hidden FK form fields** (e.g. `projectId`, `siteId`) that don't appear in the form — by design (FKs get injected into the save payload).
 - **Extend coverage when touching:** hooks (`useEntityCrud`, `useEntity`), dashboards/Kanban logic, more module configs.
 - **Permissions**: enforcement lives in `useEntityCrud` (gates CRUD by `TABLE_MODULE[table]` → `canEdit`) — modules hide New/Edit/Delete with the returned `editable` flag.
+- **Projects have two business lines** (`project_type`): `telecom_service` (default, sites/phases, generic form) and `supply_trading` (custom supply modal + `project_supply_items` goods table; line totals write back to budget=BAC / spent=AC(0) / revenue=PO). `useSupplyItems` loads/saves goods lines; new schema tables must be registered in `TABLES`/`FIELD_CONFIGS` or the entityConfigs invariant test fails.
 
 ---
 

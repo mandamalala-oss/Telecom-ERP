@@ -168,6 +168,34 @@ export interface Project {
   progress: number;
   region: Region;
   createdAt: string;
+  /** Supply/trading line (default 'telecom_service' when absent). */
+  projectType?: ProjectType;
+  customerContact?: string;
+  deliveryDeadline?: string;
+  deliveryAddress?: string;
+  deliveryStatus?: DeliveryStatus;
+  poReference?: string;
+  notes?: string;
+}
+
+/** Discriminates the two project business lines. */
+export type ProjectType = 'telecom_service' | 'supply_trading';
+export type DeliveryStatus = 'pending' | 'partial' | 'delivered';
+
+/** One goods line of a supply/trading project (project_supply_items). Totals
+ * are computed client-side (totalSelling = qty × sellingPrice, etc.). */
+export interface SupplyItem {
+  id?: string;
+  projectId?: string;
+  code?: string;
+  description: string;
+  unit: string;
+  qty: number;
+  purchasePrice: number;
+  sellingPrice: number;
+  totalSelling?: number;
+  totalCost?: number;
+  margin?: number;
 }
 
 // ─── TASKS ──────────────────────────────────────────────────────────────────

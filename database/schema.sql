@@ -134,6 +134,14 @@ create table projects (
   team          text[] default '{}',
   progress      smallint default 0,
   region        text,
+  -- Supply/trading line (migration 019):
+  project_type     text default 'telecom_service' check (project_type in ('telecom_service','supply_trading')),
+  customer_contact text,
+  delivery_deadline date,
+  delivery_address text,
+  delivery_status  text default 'pending' check (delivery_status in ('pending','partial','delivered')),
+  po_reference     text,
+  notes            text,
   created_at    timestamptz default now()
 );
 
@@ -144,6 +152,20 @@ create table project_sites (
   site_id    uuid not null references sites(id)    on delete cascade,
   created_at timestamptz default now(),
   primary key (project_id, site_id)
+);
+
+-- Goods lines for supply/trading projects (migration 019). Computed values
+-- (total_selling, total_cost, margin) are derived in TypeScript, not stored.
+create table project_supply_items (
+  id             uuid primary key default gen_random_uuid(),
+  project_id     uuid not null references projects(id) on delete cascade,
+  code           text,
+  description    text not null,
+  unit           text default 'U',
+  qty            numeric not null default 1,
+  purchase_price numeric not null default 0,
+  selling_price  numeric not null default 0,
+  created_at     timestamptz default now()
 );
 
 -- ─── TASKS ──────────────────────────────────────────────────────

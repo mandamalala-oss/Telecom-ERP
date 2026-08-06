@@ -35,6 +35,8 @@ const statusMap: Record<string, string> = {
   draft: 'slate', sent: 'blue', accepted: 'green', rejected: 'red', expired: 'amber',
   partially_paid: 'amber', paid: 'green', overdue: 'red',
   approved: 'green', partial: 'amber', received: 'green',
+  // supply delivery
+  delivered: 'green',
   // procurement
   pending_approval: 'amber', po_raised: 'cyan',
   // dms

@@ -10,6 +10,7 @@ export const TABLES = {
   sites: 'sites',
   projects: 'projects',
   projectSites: 'project_sites',
+  projectSupplyItems: 'project_supply_items',
   tasks: 'tasks',
   warehouses: 'warehouses',
   inventoryItems: 'inventory_items',
@@ -152,6 +153,18 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   project_sites: [
     { key: 'projectId', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name' } },
     { key: 'siteId', label: 'Site', type: 'select', lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}' } },
+  ],
+  // Goods lines for supply/trading projects — edited via the custom supply
+  // modal in ProjectsModule, not the generic form. Config exists so the
+  // schema↔config invariant holds.
+  project_supply_items: [
+    { key: 'projectId', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name' } },
+    { key: 'code', label: 'Code', type: 'text' },
+    { key: 'description', label: 'Description', type: 'text', required: true },
+    { key: 'unit', label: 'Unit', type: 'text' },
+    { key: 'qty', label: 'Qty', type: 'number' },
+    { key: 'purchasePrice', label: 'Purchase Price', type: 'number' },
+    { key: 'sellingPrice', label: 'Selling Price', type: 'number' },
   ],
   tasks: [
     { key: 'title', label: 'Title', type: 'text', required: true },
