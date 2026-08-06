@@ -369,7 +369,7 @@ export function FinanceModule() {
                     <td className="td capitalize text-xs"><Badge status="sent">{pay.method?.replace('_',' ')}</Badge></td>
                     <td className="td font-mono text-xs text-slate-400">{pay.reference}</td>
                     <td className="td whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      {editable && !isAutoPayment(pay) && (
+                      {editable && (
                         <div className="flex gap-1">
                           <button onClick={() => editPay(pay)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
                           <button onClick={() => handleDelete('payment', () => removePayment(pay))} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>

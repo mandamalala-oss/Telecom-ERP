@@ -53,7 +53,7 @@ describe('financeWorkflows — invoice marked paid', () => {
 })
 
 describe('financeWorkflows — accepted quote → PO', () => {
-  it('creates a PO with status sent and the quote customer as vendor', () => {
+  it('creates a PO with status sent, order date = selection date, and no empty-string dates', () => {
     const out = poFromAcceptedQuote(quote, 'PO-2026-0001', '2026-08-05')
     expect(out.status).toBe('sent')
     expect(out.vendorId).toBe('c1')
@@ -62,7 +62,10 @@ describe('financeWorkflows — accepted quote → PO', () => {
     expect(out.items).toHaveLength(1)
     expect(out.items[0].description).toBe('Cable')
     expect(out.number).toBe('PO-2026-0001')
+    expect(out.orderDate).toBe('2026-08-05')
     expect(out.notes).toContain('QT-001')
+    // expected_delivery must be omitted, not an empty string (date column).
+    expect('expectedDelivery' in out).toBe(false)
   })
 })
 

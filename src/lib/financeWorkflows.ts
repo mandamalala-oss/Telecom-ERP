@@ -67,13 +67,15 @@ export function autoPaymentForPaid(
 
 /**
  * Quote accepted → auto-create a Purchase Order (default status 'sent').
- * The quote's customer maps onto the PO's vendor.
+ * The quote's customer maps onto the PO's vendor. `orderDate` is the date the
+ * status was selected; expected_delivery is left NULL (never an empty string —
+ * Postgres rejects '' for a date column).
  */
 export function poFromAcceptedQuote(
   q: Pick<Quote, 'number' | 'customerId' | 'customerName' | 'projectId' | 'items' | 'subtotal' | 'tax' | 'total'>,
   number: string,
   orderDate: string
-): Omit<PurchaseOrder, 'id'> {
+): Omit<PurchaseOrder, 'id' | 'expectedDelivery'> {
   return {
     number,
     vendorId: q.customerId,
@@ -85,7 +87,6 @@ export function poFromAcceptedQuote(
     tax: q.tax ?? 0,
     total: q.total ?? 0,
     orderDate,
-    expectedDelivery: '',
     notes: `Auto-created from accepted quote ${q.number}`,
   }
 }
