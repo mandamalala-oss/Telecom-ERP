@@ -54,6 +54,7 @@ export function FinanceModule() {
   const [selPo, setSelPo] = useState<PurchaseOrder | null>(null)
   const [selPay, setSelPay] = useState<Payment | null>(null)
   const [filterCustomer, setFilterCustomer] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   // Row id whose status update is in flight — guards against double-firing a
   // transition (and thus duplicating the auto-created child doc).
@@ -80,10 +81,22 @@ export function FinanceModule() {
     for (const p of payments) if (p.customerName) names.add(p.customerName)
     return [...names].sort((a, b) => a.localeCompare(b))
   }, [invoices, quotes, pos, payments])
-  const visibleInvoices = filterCustomer ? invoices.filter(i => i.customerName === filterCustomer) : invoices
-  const visibleQuotes   = filterCustomer ? quotes.filter(q => q.customerName === filterCustomer) : quotes
-  const visiblePos      = filterCustomer ? pos.filter(p => p.vendorName === filterCustomer) : pos
-  const visiblePayments = filterCustomer ? payments.filter(p => p.customerName === filterCustomer) : payments
+  // Status filter options follow the ACTIVE tab's own status set; the
+  // payments tab has no status field, so it gets no status filter.
+  const statusOptions =
+    tab === 'invoices' ? INVOICE_STATUSES :
+    tab === 'quotes' ? QUOTE_STATUSES :
+    tab === 'purchase_orders' ? PO_STATUSES : []
+  const visibleInvoices = invoices.filter(i =>
+    (!filterCustomer || i.customerName === filterCustomer) &&
+    (!filterStatus || i.status === filterStatus))
+  const visibleQuotes = quotes.filter(q =>
+    (!filterCustomer || q.customerName === filterCustomer) &&
+    (!filterStatus || q.status === filterStatus))
+  const visiblePos = pos.filter(p =>
+    (!filterCustomer || p.vendorName === filterCustomer) &&
+    (!filterStatus || p.status === filterStatus))
+  const visiblePayments = payments.filter(p => !filterCustomer || p.customerName === filterCustomer)
 
   const addForTab = () => {
     if (tab === 'invoices') newInv()
@@ -221,7 +234,7 @@ export function FinanceModule() {
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg flex-wrap">
           {(['invoices','quotes','purchase_orders','payments'] as Tab[]).map(t => (
-            <button key={t} onClick={() => setTab(t)}
+            <button key={t} onClick={() => { setTab(t); setFilterStatus('') }}
               className={`px-3 py-1.5 text-xs font-semibold rounded capitalize transition-all whitespace-nowrap ${tab===t ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'}`}>
               {t.replace('_',' ')}
             </button>
@@ -237,6 +250,17 @@ export function FinanceModule() {
             <option value="">All customers</option>
             {customerOptions.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
+          {statusOptions.length > 0 && (
+            <select
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+              className="text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-slate-700 dark:text-slate-200 cursor-pointer focus:outline-none capitalize"
+              title="Filter by status"
+            >
+              <option value="">All statuses</option>
+              {statusOptions.map(s => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
+            </select>
+          )}
           {editable && (
             <Button icon={<Plus className="w-4 h-4"/>} onClick={addForTab}>
               New {tab === 'invoices' ? 'Invoice' : tab === 'quotes' ? 'Quote' : tab === 'purchase_orders' ? 'PO' : 'Payment'}
