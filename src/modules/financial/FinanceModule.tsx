@@ -7,29 +7,38 @@ import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { TABLES } from '@/lib/api/entityConfigs'
 import { resolvePaidOnStatusChange } from '@/lib/invoiceStatus'
+import { autoPaymentForPaid, poFromAcceptedQuote, invoiceFromReceivedPo, isAutoPayment, nextNumberFor, hasAutoDoc } from '@/lib/financeWorkflows'
 import type { Quote, Invoice, PurchaseOrder, Payment } from '@/types'
 
 const fmt = (n: number) => (n ?? 0) >= 1e6 ? `${((n ?? 0)/1e6).toFixed(2)}M Ar` : `${(n ?? 0).toLocaleString()} Ar`
 
 const INVOICE_STATUSES = ['draft', 'sent', 'partially_paid', 'paid', 'overdue', 'cancelled']
+const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired']
+const PO_STATUSES = ['draft', 'approved', 'sent', 'partial', 'received', 'cancelled']
 
-const INVOICE_STATUS_COLOR: Record<string, string> = {
+const STATUS_COLOR: Record<string, string> = {
   draft: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300',
   sent: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300',
   partially_paid: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300',
   paid: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300',
   overdue: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300',
   cancelled: 'bg-slate-100 dark:bg-slate-700 text-slate-500',
+  accepted: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300',
+  rejected: 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300',
+  expired: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300',
+  approved: 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300',
+  partial: 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300',
+  received: 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300',
 }
 
 type Tab = 'invoices' | 'quotes' | 'purchase_orders' | 'payments'
 
 export function FinanceModule() {
   const [tab, setTab] = useState<Tab>('invoices')
-  const { data: invoices, error: invErr, openCreate: newInv, openEdit: editInv, remove: removeInv, update: updateInvoice, modal: invModal } = useEntityCrud<Invoice>(TABLES.invoices, 'Invoice')
-  const { data: quotes, error: quoErr, openCreate: newQuo, openEdit: editQuo, remove: removeQuo, modal: quoModal } = useEntityCrud<Quote>(TABLES.quotes, 'Quote')
-  const { data: pos, error: poErr, openCreate: newPo, openEdit: editPo, remove: removePo, modal: poModal } = useEntityCrud<PurchaseOrder>(TABLES.purchaseOrders, 'Purchase Order')
-  const { data: payments, error: payErr, openCreate: newPay, openEdit: editPay, remove: removePay, modal: payModal } = useEntityCrud<Payment>(
+  const { data: invoices, error: invErr, openCreate: newInv, openEdit: editInv, remove: removeInv, update: updateInvoice, create: createInvoice, modal: invModal, editable } = useEntityCrud<Invoice>(TABLES.invoices, 'Invoice')
+  const { data: quotes, error: quoErr, openCreate: newQuo, openEdit: editQuo, remove: removeQuo, update: updateQuote, modal: quoModal } = useEntityCrud<Quote>(TABLES.quotes, 'Quote')
+  const { data: pos, error: poErr, openCreate: newPo, openEdit: editPo, remove: removePo, update: updatePo, create: createPo, modal: poModal } = useEntityCrud<PurchaseOrder>(TABLES.purchaseOrders, 'Purchase Order')
+  const { data: payments, error: payErr, openCreate: newPay, openEdit: editPay, remove: removePay, create: createPayment, modal: payModal } = useEntityCrud<Payment>(
     TABLES.payments, 'Payment', undefined, async (payment) => {
       // Keep invoice.paid in sync: revenue KPIs and balances read the
       // invoice row, so a payment must update it or they drift apart.
@@ -41,6 +50,9 @@ export function FinanceModule() {
   )
   const [selInv, setSelInv] = useState<Invoice | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  // Row id whose status update is in flight — guards against double-firing a
+  // transition (and thus duplicating the auto-created child doc).
+  const [statusBusy, setStatusBusy] = useState<string | null>(null)
 
   const totalRevenue    = invoices.reduce((s, i) => s + (i.paid ?? 0), 0)
   const pendingAR       = invoices.reduce((s, i) => s + (i.balance ?? 0), 0)
@@ -62,20 +74,80 @@ export function FinanceModule() {
   }
 
   // Quick status change straight from the table — no edit modal needed.
+  // Status transitions also drive the automation: paid → payment,
+  // accepted → PO (sent), received → invoice (draft).
   const changeStatus = async (inv: Invoice, status: string) => {
-    if (status === inv.status) return
+    if (status === inv.status || statusBusy === inv.id) return
+    setStatusBusy(inv.id)
     try {
       setActionError(null)
-      const patch: Partial<Invoice> = { status: status as Invoice['status'] }
-      // "paid" settles in full; leaving "paid" (mistake/test) restores paid
-      // to the recorded payments so the balance comes back.
-      const recordedPayments = payments
-        .filter(p => p.invoiceId === inv.id)
-        .reduce((s, p) => s + (p.amount ?? 0), 0)
-      patch.paid = resolvePaidOnStatusChange(status, inv.total ?? 0, recordedPayments)
-      await updateInvoice(inv.id!, patch)
+      const invoicePayments = payments.filter(p => p.invoiceId === inv.id)
+      // Manual-only total: the auto "settlement" payment is excluded so paid
+      // and balance reconcile correctly when leaving 'paid' again.
+      const manualPayments = invoicePayments.filter(p => !isAutoPayment(p))
+      const recordedManual = manualPayments.reduce((s, p) => s + (p.amount ?? 0), 0)
+      const autoPayments = invoicePayments.filter(isAutoPayment)
+      const goingToPaid = status === 'paid'
+      const leavingPaid = inv.status === 'paid' && !goingToPaid
+
+      if (goingToPaid) {
+        // Create the settlement record FIRST — if it fails, the invoice stays
+        // unpaid (no phantom "paid" state). Skip when an auto record already
+        // lingers (e.g. from a failed leave-paid).
+        const pay = autoPaymentForPaid(inv, recordedManual, todayStr)
+        if (pay && autoPayments.length === 0) await createPayment(pay)
+        await updateInvoice(inv.id!, { status: 'paid', paid: inv.total ?? 0 })
+      } else if (leavingPaid) {
+        // Settle the invoice state first, then drop the auto record.
+        await updateInvoice(inv.id!, { status: status as Invoice['status'], paid: recordedManual })
+        for (const p of autoPayments) await removePay(p.id!)
+      } else {
+        await updateInvoice(inv.id!, {
+          status: status as Invoice['status'],
+          paid: resolvePaidOnStatusChange(status, inv.total ?? 0, recordedManual),
+        })
+      }
     } catch (e: any) {
       setActionError(e.message ?? String(e))
+    } finally {
+      setStatusBusy(null)
+    }
+  }
+
+  // Accepted quote → auto-create a Purchase Order (default status "sent").
+  const changeQuoteStatus = async (q: Quote, status: string) => {
+    if (status === q.status || statusBusy === q.id) return
+    setStatusBusy(q.id)
+    try {
+      setActionError(null)
+      await updateQuote(q.id!, { status: status as Quote['status'] })
+      if (status === 'accepted' && !hasAutoDoc(pos, q.number)) {
+        await createPo(poFromAcceptedQuote(q, nextNumberFor('PO', pos, todayStr), todayStr))
+      }
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    } finally {
+      setStatusBusy(null)
+    }
+  }
+
+  // Received PO → auto-create an Invoice (default status "draft").
+  const changePoStatus = async (po: PurchaseOrder, status: string) => {
+    if (status === po.status || statusBusy === po.id) return
+    setStatusBusy(po.id)
+    try {
+      setActionError(null)
+      await updatePo(po.id!, { status: status as PurchaseOrder['status'] })
+      if (status === 'received' && !hasAutoDoc(invoices, po.number)) {
+        const due = new Date()
+        due.setDate(due.getDate() + 30)
+        const dueStr = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`
+        await createInvoice(invoiceFromReceivedPo(po, nextNumberFor('INV', invoices, todayStr), todayStr, dueStr))
+      }
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    } finally {
+      setStatusBusy(null)
     }
   }
 
@@ -125,9 +197,11 @@ export function FinanceModule() {
             </button>
           ))}
         </div>
-        <Button icon={<Plus className="w-4 h-4"/>} onClick={addForTab}>
-          New {tab === 'invoices' ? 'Invoice' : tab === 'quotes' ? 'Quote' : tab === 'purchase_orders' ? 'PO' : 'Payment'}
-        </Button>
+        {editable && (
+          <Button icon={<Plus className="w-4 h-4"/>} onClick={addForTab}>
+            New {tab === 'invoices' ? 'Invoice' : tab === 'quotes' ? 'Quote' : tab === 'purchase_orders' ? 'PO' : 'Payment'}
+          </Button>
+        )}
       </div>
       {errorForTab && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{errorForTab}</div>}
       {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
@@ -152,21 +226,28 @@ export function FinanceModule() {
                     <td className="td text-xs text-slate-500">{inv.issueDate}</td>
                     <td className="td text-xs text-slate-500">{inv.dueDate}</td>
                     <td className="td">
-                      <select
-                        value={inv.status}
-                        onChange={e => changeStatus(inv, e.target.value)}
-                        onClick={e => e.stopPropagation()}
-                        className={`text-xs font-semibold rounded-full border-0 px-2 py-1 cursor-pointer focus:outline-none ${INVOICE_STATUS_COLOR[inv.status] ?? 'bg-slate-100 text-slate-600'}`}
-                        title="Change status"
-                      >
-                        {INVOICE_STATUSES.map(s => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
-                      </select>
+                      {editable ? (
+                        <select
+                          value={inv.status}
+                          onChange={e => changeStatus(inv, e.target.value)}
+                          onClick={e => e.stopPropagation()}
+                          disabled={statusBusy === inv.id}
+                          className={`text-xs font-semibold rounded-full border-0 px-2 py-1 cursor-pointer focus:outline-none ${STATUS_COLOR[inv.status] ?? 'bg-slate-100 text-slate-600'}`}
+                          title="Change status"
+                        >
+                          {INVOICE_STATUSES.map(s => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
+                        </select>
+                      ) : (
+                        <Badge status={inv.status} />
+                      )}
                     </td>
                     <td className="td whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      <div className="flex gap-1">
-                        <button onClick={() => editInv(inv)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => handleDelete('invoice', async () => { await removeInv(inv.id!); if (selInv?.id === inv.id) setSelInv(null) })} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
+                      {editable && (
+                        <div className="flex gap-1">
+                          <button onClick={() => editInv(inv)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleDelete('invoice', async () => { await removeInv(inv.id!); if (selInv?.id === inv.id) setSelInv(null) })} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -193,12 +274,28 @@ export function FinanceModule() {
                     <td className="td text-slate-500 text-xs">{fmt(q.tax)}</td>
                     <td className="td font-bold text-green-600">{fmt(q.total)}</td>
                     <td className="td text-xs text-slate-500">{q.validUntil}</td>
-                    <td className="td"><Badge status={q.status} /></td>
+                    <td className="td">
+                      {editable ? (
+                        <select
+                          value={q.status}
+                          onChange={e => changeQuoteStatus(q, e.target.value)}
+                          disabled={statusBusy === q.id}
+                          className={`text-xs font-semibold rounded-full border-0 px-2 py-1 cursor-pointer focus:outline-none ${STATUS_COLOR[q.status] ?? 'bg-slate-100 text-slate-600'}`}
+                          title="Change status"
+                        >
+                          {QUOTE_STATUSES.map(s => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
+                        </select>
+                      ) : (
+                        <Badge status={q.status} />
+                      )}
+                    </td>
                     <td className="td whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      <div className="flex gap-1">
-                        <button onClick={() => editQuo(q)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => handleDelete('quote', () => removeQuo(q.id!))} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
+                      {editable && (
+                        <div className="flex gap-1">
+                          <button onClick={() => editQuo(q)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleDelete('quote', () => removeQuo(q.id!))} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -224,12 +321,28 @@ export function FinanceModule() {
                     <td className="td font-bold">{fmt(po.total)}</td>
                     <td className="td text-xs text-slate-500">{po.orderDate}</td>
                     <td className="td text-xs text-slate-500">{po.expectedDelivery}</td>
-                    <td className="td"><Badge status={po.status} /></td>
+                    <td className="td">
+                      {editable ? (
+                        <select
+                          value={po.status}
+                          onChange={e => changePoStatus(po, e.target.value)}
+                          disabled={statusBusy === po.id}
+                          className={`text-xs font-semibold rounded-full border-0 px-2 py-1 cursor-pointer focus:outline-none ${STATUS_COLOR[po.status] ?? 'bg-slate-100 text-slate-600'}`}
+                          title="Change status"
+                        >
+                          {PO_STATUSES.map(s => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
+                        </select>
+                      ) : (
+                        <Badge status={po.status} />
+                      )}
+                    </td>
                     <td className="td whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      <div className="flex gap-1">
-                        <button onClick={() => editPo(po)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => handleDelete('PO', () => removePo(po.id!))} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
+                      {editable && (
+                        <div className="flex gap-1">
+                          <button onClick={() => editPo(po)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleDelete('PO', () => removePo(po.id!))} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -256,10 +369,12 @@ export function FinanceModule() {
                     <td className="td capitalize text-xs"><Badge status="sent">{pay.method?.replace('_',' ')}</Badge></td>
                     <td className="td font-mono text-xs text-slate-400">{pay.reference}</td>
                     <td className="td whitespace-nowrap" onClick={e => e.stopPropagation()}>
-                      <div className="flex gap-1">
-                        <button onClick={() => editPay(pay)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
-                        <button onClick={() => handleDelete('payment', () => removePayment(pay))} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
-                      </div>
+                      {editable && !isAutoPayment(pay) && (
+                        <div className="flex gap-1">
+                          <button onClick={() => editPay(pay)} className="p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500"><Pencil className="w-3.5 h-3.5" /></button>
+                          <button onClick={() => handleDelete('payment', () => removePayment(pay))} className="p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
