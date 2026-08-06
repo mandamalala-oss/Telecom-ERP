@@ -194,6 +194,7 @@ function SupplyProjectModal({ open, project, items, itemsLoading, editable, onCl
     setError(null)
     try {
       await onSave(form, rows)
+      onClose()
     } catch (e: any) {
       setError(e.message ?? String(e))
     } finally {
@@ -256,7 +257,7 @@ function SupplyProjectModal({ open, project, items, itemsLoading, editable, onCl
               <span className="w-14 text-right">Qty</span>
               <span className="w-28 text-right">Purchase</span>
               <span className="w-28 text-right">Selling</span>
-              <span className="w-24 text-right">Margin</span>
+              <span className="w-28 text-right">Margin</span>
               <span className="w-28 text-right">Total</span>
               <span className="w-6" />
             </div>
@@ -270,7 +271,7 @@ function SupplyProjectModal({ open, project, items, itemsLoading, editable, onCl
                   <input className="input w-14 text-right" type="number" min={0} value={r.qty ?? ''} onChange={(e) => updateRow(idx, { qty: e.target.value })} />
                   <input className="input w-28 text-right" type="number" min={0} value={r.purchasePrice ?? ''} onChange={(e) => updateRow(idx, { purchasePrice: e.target.value })} />
                   <input className="input w-28 text-right" type="number" min={0} value={r.sellingPrice ?? ''} onChange={(e) => updateRow(idx, { sellingPrice: e.target.value })} />
-                  <span className={`w-24 text-right text-xs font-semibold ${perUnitMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>{perUnitMargin.toLocaleString()}</span>
+                  <span className={`w-28 text-right text-xs font-semibold ${perUnitMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>{perUnitMargin.toLocaleString()}</span>
                   <span className="w-28 text-right text-xs font-semibold">{((Number(r.qty) || 0) * (Number(r.sellingPrice) || 0)).toLocaleString()}</span>
                   <div className="w-6 flex justify-end">
                     <button type="button" onClick={() => removeRow(idx)} aria-label="Remove line" className="text-red-400 hover:text-red-600 text-xs">✕</button>
@@ -424,7 +425,11 @@ export function ProjectsModule() {
       pm: form.pm,
       currentPhase: 'survey',
       phases: [],
-      progress: 0,
+      // Supply projects have no phases — progress stays as-is on edit, and
+      // jumps to 100% automatically when the status is set to completed.
+      progress: form.status === 'completed'
+        ? 100
+        : (supplyModal?.mode === 'edit' ? (supplyModal.project.progress ?? 0) : 0),
       region: '' as Region,
       // budget/spent/revenue are bigint columns — round fractional totals.
       // For supply, AC (spent) = the purchase cost, known at creation; we buy
@@ -684,7 +689,7 @@ export function ProjectsModule() {
                         <th className="th w-14 text-right">Qty</th>
                         <th className="th w-28 text-right">Purchase</th>
                         <th className="th w-28 text-right">Selling</th>
-                        <th className="th w-24 text-right">Margin</th>
+                        <th className="th w-28 text-right">Margin</th>
                         <th className="th w-28 text-right">Total</th>
                       </tr>
                     </thead>
@@ -700,7 +705,7 @@ export function ProjectsModule() {
                             <td className="td w-14 text-right">{it.qty}</td>
                             <td className="td w-28 text-right">{fmt(it.purchasePrice)}</td>
                             <td className="td w-28 text-right">{fmt(it.sellingPrice)}</td>
-                            <td className={`td w-24 text-right font-bold ${perUnitMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(perUnitMargin)}</td>
+                            <td className={`td w-28 text-right font-bold ${perUnitMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(perUnitMargin)}</td>
                             <td className="td w-28 text-right font-bold">{fmt(total)}</td>
                           </tr>
                         )
