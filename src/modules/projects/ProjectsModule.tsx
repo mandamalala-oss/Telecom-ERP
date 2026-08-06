@@ -249,31 +249,35 @@ function SupplyProjectModal({ open, project, items, itemsLoading, editable, onCl
         <div>
           <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">Goods Line Items</p>
           <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700 overflow-x-auto">
-            <div className="grid grid-cols-12 gap-2 px-3 py-1.5 min-w-[720px] text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              <span className="col-span-1">Code</span>
-              <span className="col-span-3">Description</span>
-              <span className="col-span-1">Unit</span>
-              <span className="col-span-1">Qty</span>
-              <span className="col-span-2">Purchase Price</span>
-              <span className="col-span-2">Selling Price</span>
-              <span className="col-span-1 text-right">Margin</span>
-              <span className="col-span-1 text-right">Total</span>
+            <div className="flex items-center gap-2 px-3 py-1.5 min-w-[780px] text-[10px] font-bold uppercase tracking-wide text-slate-400">
+              <span className="w-16">Code</span>
+              <span className="flex-1">Description</span>
+              <span className="w-14">Unit</span>
+              <span className="w-14 text-right">Qty</span>
+              <span className="w-28 text-right">Purchase</span>
+              <span className="w-28 text-right">Selling</span>
+              <span className="w-24 text-right">Margin</span>
+              <span className="w-28 text-right">Total</span>
+              <span className="w-6" />
             </div>
-            {rows.map((r, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 px-3 py-1.5 items-center min-w-[720px]">
-                <input className="input col-span-1" placeholder="Code" value={r.code ?? ''} onChange={(e) => updateRow(idx, { code: e.target.value })} />
-                <input className="input col-span-3" placeholder="Description" value={r.description ?? ''} onChange={(e) => updateRow(idx, { description: e.target.value })} />
-                <input className="input col-span-1" placeholder="Unit" value={r.unit ?? ''} onChange={(e) => updateRow(idx, { unit: e.target.value })} />
-                <input className="input col-span-1" type="number" min={0} value={r.qty ?? ''} onChange={(e) => updateRow(idx, { qty: e.target.value })} />
-                <input className="input col-span-2" type="number" min={0} value={r.purchasePrice ?? ''} onChange={(e) => updateRow(idx, { purchasePrice: e.target.value })} />
-                <input className="input col-span-2" type="number" min={0} value={r.sellingPrice ?? ''} onChange={(e) => updateRow(idx, { sellingPrice: e.target.value })} />
-                <span className="col-span-1 text-right text-xs font-semibold">{((Number(r.qty) || 0) * ((Number(r.sellingPrice) || 0) - (Number(r.purchasePrice) || 0))).toLocaleString()}</span>
-                <div className="col-span-1 flex items-center justify-end gap-1">
-                  <span className="text-xs font-semibold">{((Number(r.qty) || 0) * (Number(r.sellingPrice) || 0)).toLocaleString()}</span>
-                  <button type="button" onClick={() => removeRow(idx)} aria-label="Remove line" className="text-red-400 hover:text-red-600 text-xs">✕</button>
+            {rows.map((r, idx) => {
+              const perUnitMargin = (Number(r.sellingPrice) || 0) - (Number(r.purchasePrice) || 0)
+              return (
+                <div key={idx} className="flex items-center gap-2 px-3 py-1.5 min-w-[780px]">
+                  <input className="input w-16" placeholder="Code" value={r.code ?? ''} onChange={(e) => updateRow(idx, { code: e.target.value })} />
+                  <input className="input flex-1" placeholder="Description" value={r.description ?? ''} onChange={(e) => updateRow(idx, { description: e.target.value })} />
+                  <input className="input w-14" placeholder="Unit" value={r.unit ?? ''} onChange={(e) => updateRow(idx, { unit: e.target.value })} />
+                  <input className="input w-14 text-right" type="number" min={0} value={r.qty ?? ''} onChange={(e) => updateRow(idx, { qty: e.target.value })} />
+                  <input className="input w-28 text-right" type="number" min={0} value={r.purchasePrice ?? ''} onChange={(e) => updateRow(idx, { purchasePrice: e.target.value })} />
+                  <input className="input w-28 text-right" type="number" min={0} value={r.sellingPrice ?? ''} onChange={(e) => updateRow(idx, { sellingPrice: e.target.value })} />
+                  <span className={`w-24 text-right text-xs font-semibold ${perUnitMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>{perUnitMargin.toLocaleString()}</span>
+                  <span className="w-28 text-right text-xs font-semibold">{((Number(r.qty) || 0) * (Number(r.sellingPrice) || 0)).toLocaleString()}</span>
+                  <div className="w-6 flex justify-end">
+                    <button type="button" onClick={() => removeRow(idx)} aria-label="Remove line" className="text-red-400 hover:text-red-600 text-xs">✕</button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
             <div className="px-3 py-2">
               <Button type="button" variant="secondary" onClick={addRow}>+ Add Item</Button>
             </div>
@@ -423,8 +427,10 @@ export function ProjectsModule() {
       progress: 0,
       region: '' as Region,
       // budget/spent/revenue are bigint columns — round fractional totals.
+      // For supply, AC (spent) = the purchase cost, known at creation; we buy
+      // to sell, so BAC = AC and the profit = PO − AC (the trading margin).
       budget: Math.round(totals.cost),
-      spent: supplyModal?.mode === 'edit' ? (supplyModal.project.spent ?? 0) : 0,
+      spent: Math.round(totals.cost),
       revenue: Math.round(totals.selling),
       projectType: 'supply_trading',
       customerContact: form.customerContact,
@@ -669,23 +675,33 @@ export function ProjectsModule() {
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Goods ({detailSupplyItems.length})</p>
                 <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
-                  <table className="w-full min-w-[720px]">
+                  <table className="w-full min-w-[780px]">
                     <thead className="bg-slate-50 dark:bg-slate-700/50">
-                      <tr>{['Code','Description','Unit','Qty','Purchase','Selling','Margin','Total'].map(h => <th key={h} className="th">{h}</th>)}</tr>
+                      <tr>
+                        <th className="th w-16">Code</th>
+                        <th className="th">Description</th>
+                        <th className="th w-14">Unit</th>
+                        <th className="th w-14 text-right">Qty</th>
+                        <th className="th w-28 text-right">Purchase</th>
+                        <th className="th w-28 text-right">Selling</th>
+                        <th className="th w-24 text-right">Margin</th>
+                        <th className="th w-28 text-right">Total</th>
+                      </tr>
                     </thead>
                     <tbody>
                       {detailSupplyItems.map((it) => {
-                        const line = supplyTotals([it])
+                        const perUnitMargin = (Number(it.sellingPrice) || 0) - (Number(it.purchasePrice) || 0)
+                        const total = (Number(it.qty) || 0) * (Number(it.sellingPrice) || 0)
                         return (
                           <tr key={it.id ?? it.code} className="border-t border-slate-100 dark:border-slate-700">
-                            <td className="td font-mono text-xs">{it.code ?? '—'}</td>
+                            <td className="td w-16 font-mono text-xs">{it.code ?? '—'}</td>
                             <td className="td font-semibold">{it.description}</td>
-                            <td className="td text-xs">{it.unit}</td>
-                            <td className="td text-center">{it.qty}</td>
-                            <td className="td">{fmt(it.purchasePrice)}</td>
-                            <td className="td">{fmt(it.sellingPrice)}</td>
-                            <td className={`td font-bold ${line.selling - line.cost >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(line.selling - line.cost)}</td>
-                            <td className="td font-bold">{fmt(line.selling)}</td>
+                            <td className="td w-14 text-xs">{it.unit}</td>
+                            <td className="td w-14 text-right">{it.qty}</td>
+                            <td className="td w-28 text-right">{fmt(it.purchasePrice)}</td>
+                            <td className="td w-28 text-right">{fmt(it.sellingPrice)}</td>
+                            <td className={`td w-24 text-right font-bold ${perUnitMargin >= 0 ? 'text-green-600' : 'text-red-600'}`}>{fmt(perUnitMargin)}</td>
+                            <td className="td w-28 text-right font-bold">{fmt(total)}</td>
                           </tr>
                         )
                       })}
