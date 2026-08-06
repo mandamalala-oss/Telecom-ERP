@@ -11,7 +11,7 @@ import { useSupplyItems, supplyTotals } from '@/lib/hooks/useSupplyItems'
 import { TABLES } from '@/lib/api/entityConfigs'
 import { projectFinance } from '@/lib/projectFinance'
 import { supabase } from '@/lib/supabase'
-import type { Project, PhaseDetail, ProjectSite, Site, SupplyItem, ProjectType, DeliveryStatus, Region } from '@/types'
+import type { Project, PhaseDetail, ProjectSite, Site, SupplyItem, ProjectType, DeliveryStatus, Region, Quote, Company } from '@/types'
 
 const fmt = (n: number | null | undefined) => {
   const v = n ?? 0
@@ -78,6 +78,7 @@ const isSupply = (p: Project) => (p.projectType ?? 'telecom_service') === 'suppl
 // ── Supply / trading project form state ──────────────────────────────────────
 interface SupplyFormState {
   name: string
+  customerId: string
   customerName: string
   status: Project['status']
   startDate: string
@@ -89,20 +90,21 @@ interface SupplyFormState {
   deliveryAddress: string
   deliveryStatus: DeliveryStatus
   notes: string
+  quoteNumber: string
 }
 
 const emptySupplyForm = (): SupplyFormState => ({
-  name: '', customerName: '', status: 'not_started', startDate: '', endDate: '',
+  name: '', customerId: '', customerName: '', status: 'not_started', startDate: '', endDate: '',
   pm: '', customerContact: '', poReference: '', deliveryDeadline: '',
-  deliveryAddress: '', deliveryStatus: 'pending', notes: '',
+  deliveryAddress: '', deliveryStatus: 'pending', notes: '', quoteNumber: '',
 })
 
 const seedSupplyForm = (p: Project): SupplyFormState => ({
-  name: p.name ?? '', customerName: p.customerName ?? '', status: p.status ?? 'not_started',
+  name: p.name ?? '', customerId: p.customerId ?? '', customerName: p.customerName ?? '', status: p.status ?? 'not_started',
   startDate: p.startDate ?? '', endDate: p.endDate ?? '', pm: p.pm ?? '',
   customerContact: p.customerContact ?? '', poReference: p.poReference ?? '',
   deliveryDeadline: p.deliveryDeadline ?? '', deliveryAddress: p.deliveryAddress ?? '',
-  deliveryStatus: p.deliveryStatus ?? 'pending', notes: p.notes ?? '',
+  deliveryStatus: p.deliveryStatus ?? 'pending', notes: p.notes ?? '', quoteNumber: '',
 })
 
 const SUPPLY_STATUSES = ['not_started', 'in_progress', 'on_hold', 'completed', 'cancelled'] as const
@@ -126,6 +128,10 @@ function SupplyProjectModal({ open, project, items, itemsLoading, editable, onCl
   const [dirty, setDirty] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Quote + customer-module lookups for pre-filling a supply project.
+  const { data: quotes } = useEntity<Quote>(TABLES.quotes)
+  const { data: companies } = useEntity<Company>(TABLES.companies)
 
   // Seed the form whenever the modal opens (create → blank, edit → project).
   useEffect(() => {
@@ -157,6 +163,31 @@ function SupplyProjectModal({ open, project, items, itemsLoading, editable, onCl
   const totals = supplyTotals(rows)
   const margin = totals.selling - totals.cost
 
+  // Picking a quote pulls its number as the project name, its customer, and
+  // its line items into the goods table (code 1..n, selling price from the
+  // quote; purchase price stays manual).
+  const applyQuote = (number: string) => {
+    const q = quotes.find((x) => x.number === number)
+    setForm((f) => ({
+      ...f,
+      quoteNumber: number,
+      name: q?.number ?? f.name,
+      customerId: q?.customerId ?? f.customerId,
+      customerName: q?.customerName ?? f.customerName,
+    }))
+    if (q) {
+      setDirty(true)
+      setRows((q.items ?? []).map((it, i) => ({
+        code: String(i + 1),
+        description: it.description ?? '',
+        unit: it.unit ?? 'U',
+        qty: Number(it.quantity) || 0,
+        purchasePrice: 0, // manual
+        sellingPrice: Number(it.unitPrice) || 0,
+      })))
+    }
+  }
+
   const handleSave = async () => {
     if (!form.name.trim()) { setError('Project name is required'); return }
     setSaving(true)
@@ -181,8 +212,19 @@ function SupplyProjectModal({ open, project, items, itemsLoading, editable, onCl
       }>
       <div className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Select label="From Quote" value={form.quoteNumber} onChange={(e) => applyQuote(e.target.value)}>
+            <option value="">— none —</option>
+            {quotes.map(q => <option key={q.id} value={q.number}>{q.number} — {q.customerName}</option>)}
+          </Select>
           <Input label="Project name" required value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Cables — client A" />
-          <Input label="Customer / Client" value={form.customerName} onChange={(e) => set('customerName', e.target.value)} placeholder="Client name" />
+          <Select label="Customer" value={form.customerName} onChange={(e) => {
+            const c = companies.find((x) => x.name === e.target.value)
+            set('customerName', e.target.value)
+            set('customerId', c?.id ?? '')
+          }}>
+            <option value="">Select customer…</option>
+            {companies.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+          </Select>
           <Select label="Status" value={form.status} onChange={(e) => set('status', e.target.value)}>
             {SUPPLY_STATUSES.map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
           </Select>
@@ -373,8 +415,6 @@ export function ProjectsModule() {
     const totals = supplyTotals(rows)
     const payload: Partial<Project> = {
       name: form.name.trim(),
-      // customerId intentionally omitted — no lookup populate for supply; the
-      // column stays NULL ('' would fail the uuid cast).
       customerName: form.customerName.trim(),
       status: form.status,
       pm: form.pm,
@@ -393,7 +433,8 @@ export function ProjectsModule() {
       deliveryStatus: form.deliveryStatus,
       notes: form.notes,
     }
-    // Date columns reject '' — only send them when actually set.
+    // uuid / date columns reject '' — only send them when actually set.
+    if (form.customerId) payload.customerId = form.customerId
     if (form.startDate) payload.startDate = form.startDate
     if (form.endDate) payload.endDate = form.endDate
     if (form.deliveryDeadline) payload.deliveryDeadline = form.deliveryDeadline
