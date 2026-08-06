@@ -14,8 +14,9 @@ import { supabase } from '@/lib/supabase'
 import type { Project, PhaseDetail, ProjectSite, Site, SupplyItem, ProjectType, DeliveryStatus, Region, Quote, Company } from '@/types'
 
 const fmt = (n: number | null | undefined) => {
+  // Always the exact amount — never abbreviated (e.g. "3.3M Ar").
   const v = n ?? 0
-  return v >= 1e6 ? `${(v/1e6).toFixed(1)}M Ar` : `${v.toLocaleString()} Ar`
+  return `${v.toLocaleString()} Ar`
 }
 
 const PHASE_LABELS: Record<string, string> = {
