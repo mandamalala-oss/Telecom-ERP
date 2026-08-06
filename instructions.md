@@ -51,11 +51,12 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ## ✅ Current state (verified 2026-08)
 
-- `npm test` → **149/149 passing** (12 files)
+- `npm test` → **171/171 passing** (14 files)
 - `npx tsc --noEmit` → clean (test files are inside `src`, so they're typechecked too)
 - `npm run build` → succeeds (pre-existing chunk-size warning only, unrelated)
-- HEAD: `d775f06` — **everything pushed to `origin/main`** (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked).
+- HEAD: `bcd4c87` — **everything pushed to `origin/main`** (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked).
 - Access model is now **grant-based (CEO-only)** — see Milestone 13 below. `ROLE_PERMISSIONS` is GONE from `src/types`; roles are labels only (DB RLS still role-scoped).
+- Finance automation + Supply/Trading projects — see **Milestone 14** below (migrations 014–018 already applied; **019 pending on the live DB**).
 - Milestone 10 changed: `src/App.tsx`, `src/contexts/AuthContext.tsx` (+`.test.tsx`), `src/components/auth/` (LoginPage + test), `src/components/layout/Header.tsx`, `database/schema.sql`, `schema.sql`; new `database/migrations/012_auth_rls.sql`
 - Milestone 8 changed: `src/components/crud/EntityFormModal.tsx` + `.test.tsx`, `src/lib/hooks/useEntityCrud.tsx`, `src/lib/api/entityConfigs.ts` + `.test.ts`, `src/lib/evm.ts` + `.test.ts`, `src/modules/controls/EVMModule.tsx`
 - Milestone 6 changed: `database/schema.sql`, `schema.sql`, `src/lib/api/entityConfigs.ts`, `src/lib/evm.ts` + `.test.ts`, `src/modules/controls/EVMModule.tsx`, `src/types/index.ts`; new `database/migrations/011_add_evm_po.sql`
@@ -81,6 +82,22 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 - **Zero-grant users**: land on a "No modules have been granted…" screen with Sign out (`Home` in App.tsx; `firstAllowedPath` falls back to `/` — no /login loop).
 
 **Pushing / Vercel**: HTTPS + PAT only (see Git notes); commit email must match a GitHub account (see Git notes).
+
+---
+
+### Milestone 14 — Finance automation + Supply/Trading projects (pushed `bcd4c87`)
+
+**Finance module (`FinanceModule.tsx` + `lib/financeWorkflows.ts`):**
+- Status-driven automation via the inline status selects: invoice **paid** → auto Payment for the remaining amount (tagged `Auto —`, removed when leaving paid, create-before-flip so a failure can't leave a phantom paid invoice); quote **accepted** → auto PO (status `sent`); PO **received** → auto Invoice (status `draft`, due +30d). Deduped via `hasAutoDoc` (source number in notes), race-guarded by `statusBusy`, collision-safe numbers (`nextNumberFor`, `PO-YYYYMMDD-NN`).
+- Inline status selects on Quotes and POs (like Invoices); inline payment Method select; clickable rows with detail modals; customer + per-tab status filters.
+- **Line-items editor** (`lineItems` field type in EntityFormModal + `formPayload`): Designation/Qty/Unit/Unit-price rows, derived subtotal/tax/total (cleared rate zeroes tax; POs keep manual tax).
+
+**Projects — Supply/Trading business line (`project_type`, migration 019):**
+- `project_type` (`telecom_service` default | `supply_trading`), delivery fields, `project_supply_items` goods table; **migration `019_project_type_supply.sql` NOT yet run on the live DB**. New schema tables must be registered in `TABLES`/`FIELD_CONFIGS` or the entityConfigs invariant test fails.
+- New Project shows a **type picker**; supply projects use a custom modal (`SupplyProjectModal` in ProjectsModule.tsx): common + delivery fields, goods table (Code/Desc/Unit/Qty/Purchase/Selling/Margin-per-unit/Total, fixed widths), **From Quote** pre-fill (name = quote number, customer, items with codes 1..n, selling price from the quote), customer dropdown from the companies module.
+- Save writes back `budget = totalCost` (BAC), `spent = totalCost` (AC — **not 0**, both create and edit), `revenue = totalSelling` (PO); margin = PO − AC. Modal **closes on save**; progress **auto-100% when completed**; exact prices everywhere (`fmt` never abbreviates to "3.3M").
+- Cards: 📡/📦 badge, delivery row for supply (status/items/PO ref), type filter, summary breakdown by type, supply detail view (goods + EVM). Telecom path untouched (PhaseTimeline/syncSites).
+- `useSupplyItems` hook loads/saves goods lines (delete+insert, non-atomic like `syncSites`).
 
 ---
 
@@ -140,6 +157,7 @@ Run: `npm test` (one-shot) / `npm run test:watch`. Config: `vitest.config.ts` (d
 | `src/components/auth/ConfirmPage.test.tsx` | Email confirmation handler: PKCE `?code=` exchange, `token_hash&type=` verifyOtp (query + hash), signs the fresh session out so `/login` shows "Email confirmed!", already-signed-in short-circuit (detectSessionInUrl, no sign-out), URL error beats stale session, verify/exchange failure paths, no-token error |
 | `src/lib/hooks/useEntityCrud.test.tsx` | Module-permission gating: create/update/remove/openEdit allowed with `edit`, blocked (no-op, modal never opens) without, unmapped tables not gated |
 | `src/lib/hooks/useSupplyItems.test.ts` | Supply/trading goods lines (project_supply_items): load with client-side totals (cost/selling/margin), delete+insert save with empty-row cleaning, no-project no-op, totals math |
+| `src/lib/financeWorkflows.test.ts` | Finance automation builders: auto payment (full/partial/zero guards), PO-from-quote / invoice-from-PO mapping (status sent/draft, tax back-derive), auto-tag detection, day-prefixed unique numbering, dedup-by-notes |
 | `src/lib/evm.test.ts` | `deriveEVM`; `evFromProgress(bac, pct)`; `appendSnapshot`; `rollupCustomerEVM`; `combineEVMRecords` (sum + re-derive + benefit); `groupEVMByProject` (STARLINK-style grouping, split by customer); `mergeHistories` (same-date sum) |
 
 **Key runtime facts the tests encode:**
@@ -147,7 +165,7 @@ Run: `npm test` (one-shot) / `npm run test:watch`. Config: `vitest.config.ts` (d
 - `populate` may target **hidden FK form fields** (e.g. `projectId`, `siteId`) that don't appear in the form — by design (FKs get injected into the save payload).
 - **Extend coverage when touching:** hooks (`useEntityCrud`, `useEntity`), dashboards/Kanban logic, more module configs.
 - **Permissions**: enforcement lives in `useEntityCrud` (gates CRUD by `TABLE_MODULE[table]` → `canEdit`) — modules hide New/Edit/Delete with the returned `editable` flag.
-- **Projects have two business lines** (`project_type`): `telecom_service` (default, sites/phases, generic form) and `supply_trading` (custom supply modal + `project_supply_items` goods table; line totals write back to budget=BAC / spent=AC(0) / revenue=PO). `useSupplyItems` loads/saves goods lines; new schema tables must be registered in `TABLES`/`FIELD_CONFIGS` or the entityConfigs invariant test fails.
+- **Projects have two business lines** (`project_type`): `telecom_service` (default, sites/phases, generic form) and `supply_trading` (custom supply modal + `project_supply_items` goods table; line totals write back to **budget=BAC, spent=AC=total cost, revenue=PO**). `useSupplyItems` loads/saves goods lines; new schema tables must be registered in `TABLES`/`FIELD_CONFIGS` or the entityConfigs invariant test fails.
 
 ---
 
