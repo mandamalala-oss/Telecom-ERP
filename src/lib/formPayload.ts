@@ -34,6 +34,26 @@ export function buildPayload(
     } else if (f.type === 'permissions') {
       // JSONB permission map — keep as a plain object (never a string).
       payload[f.key] = values[f.key] && typeof values[f.key] === 'object' ? values[f.key] : {}
+    } else if (f.type === 'lineItems') {
+      // JSONB line items — normalize numbers, drop fully-empty rows.
+      const toNum = (v: any) => {
+        if (v === '' || v === undefined || v === null) return null
+        const n = Number(v)
+        return Number.isFinite(n) ? n : null
+      }
+      payload[f.key] = (Array.isArray(values[f.key]) ? values[f.key] : [])
+        .map((i: any) => ({
+          ...i,
+          quantity: toNum(i.quantity),
+          unitPrice: toNum(i.unitPrice),
+          total: (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0),
+        }))
+        .filter((i: any) =>
+          String(i.description ?? '').trim() !== '' ||
+          i.quantity != null ||
+          String(i.unit ?? '').trim() !== '' ||
+          i.unitPrice != null
+        )
     } else if (f.type === 'number') {
       const v = values[f.key]
       if (v === '' || v === undefined || v === null) {

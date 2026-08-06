@@ -6,7 +6,7 @@ import { makeApi } from '@/lib/api/crud'
 import { buildPayload } from '@/lib/formPayload'
 import { PERMISSION_MODULES } from '@/types'
 
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect' | 'sitePicker' | 'permissions'
+export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect' | 'sitePicker' | 'permissions' | 'lineItems'
 
 export interface LookupConfig {
   /** Table to load options from (TABLES value, e.g. 'sites'). */
@@ -96,6 +96,41 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   if (!open) return null
 
   const set = (k: string, v: any) => setValues((prev) => ({ ...prev, [k]: v }))
+
+  // ── Line items (Designation / Qty / Unit / Unit-price) ─────────────────────
+  // Kept in values[f.key] as an array; subtotal/tax/total derive from the rows
+  // so the quote/invoice/PO totals always match the lines.
+  const lineId = () =>
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `li-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  const lineTotal = (i: any) => (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0)
+  const applyLineTotals = (f: FieldConfig, items: any[], taxRate?: number) => {
+    const rows = items.map((i) => ({ ...i, total: lineTotal(i) }))
+    set(f.key, rows)
+    const subtotal = rows.reduce((s, i) => s + (i.total ?? 0), 0)
+    set('subtotal', subtotal)
+    const rate = taxRate !== undefined ? taxRate : Number(values.taxRate) || 0
+    // Forms WITH a rate field derive tax from it (0/blank → tax 0, so a stale
+    // tax can't survive a cleared rate); forms without one (POs) keep the
+    // manual tax amount.
+    const hasRateField = fields.some((x) => x.key === 'taxRate')
+    const tax = rate > 0
+      ? Math.round((subtotal * rate) / 100)
+      : (hasRateField ? 0 : Number(values.tax) || 0)
+    set('tax', tax)
+    set('total', subtotal + tax)
+  }
+  const updateLine = (f: FieldConfig, idx: number, patch: Record<string, any>) => {
+    const items = [...(values[f.key] ?? [])]
+    items[idx] = { ...items[idx], ...patch }
+    applyLineTotals(f, items)
+  }
+  const addLine = (f: FieldConfig) =>
+    applyLineTotals(f, [...(values[f.key] ?? []), { id: lineId(), description: '', quantity: '', unit: '', unitPrice: '', total: 0 }])
+  const removeLine = (f: FieldConfig, idx: number) =>
+    applyLineTotals(f, (values[f.key] ?? []).filter((_: any, i: number) => i !== idx))
+  const itemsField = fields.find((x) => x.type === 'lineItems')
 
   // Module-supplied rows (projects, sites, project_sites…) take precedence
   // over the auto-fetched lookup options.
@@ -310,6 +345,32 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                     })}
                   </div>
                 </div>
+              ) : f.type === 'lineItems' ? (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</p>
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700">
+                    <div className="grid grid-cols-12 gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                      <span className="col-span-4">Designation</span>
+                      <span className="col-span-2">Qty</span>
+                      <span className="col-span-2">Unit</span>
+                      <span className="col-span-2">Unit Price</span>
+                      <span className="col-span-2 text-right">Total</span>
+                    </div>
+                    {(values[f.key] ?? []).map((item: any, idx: number) => (
+                      <div key={item.id} className="grid grid-cols-12 gap-2 px-3 py-1.5 items-center">
+                        <input className="input col-span-4" placeholder="Designation" value={item.description ?? ''} onChange={(e) => updateLine(f, idx, { description: e.target.value })} />
+                        <input className="input col-span-2" type="number" min={0} placeholder="Qty" value={item.quantity ?? ''} onChange={(e) => updateLine(f, idx, { quantity: e.target.value })} />
+                        <input className="input col-span-2" placeholder="Unit" value={item.unit ?? ''} onChange={(e) => updateLine(f, idx, { unit: e.target.value })} />
+                        <input className="input col-span-2" type="number" min={0} placeholder="Price" value={item.unitPrice ?? ''} onChange={(e) => updateLine(f, idx, { unitPrice: e.target.value })} />
+                        <span className="col-span-1 text-right text-xs font-semibold">{lineTotal(item).toLocaleString()}</span>
+                        <button type="button" onClick={() => removeLine(f, idx)} aria-label="Remove line" className="col-span-1 text-red-400 hover:text-red-600 text-xs">✕</button>
+                      </div>
+                    ))}
+                    <div className="px-3 py-2">
+                      <Button type="button" variant="secondary" onClick={() => addLine(f)}>+ Add line</Button>
+                    </div>
+                  </div>
+                </div>
               ) : f.type === 'tags' ? (
                 <Input label={`${f.label} (comma separated)`} value={values[f.key] ?? ''} onChange={(e) => set(f.key, e.target.value)} placeholder={f.placeholder} />
               ) : (
@@ -317,7 +378,14 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                   label={f.label}
                   type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}
                   value={values[f.key] ?? ''}
-                  onChange={(e) => set(f.key, e.target.value)}
+                  onChange={(e) => {
+                    set(f.key, e.target.value)
+                    // Keep derived totals in sync when the tax rate changes
+                    // and line items are present.
+                    if (f.key === 'taxRate' && itemsField && (values.items ?? []).length) {
+                      applyLineTotals(itemsField, values.items, Number(e.target.value) || 0)
+                    }
+                  }}
                   placeholder={f.placeholder}
                   required={f.required}
                 />
@@ -337,6 +405,7 @@ function buildInitial(fields: FieldConfig[], initial?: Record<string, any>) {
     if (f.type === 'tags') out[f.key] = Array.isArray(v) ? v.join(', ') : (v ?? '')
     else if (f.type === 'multiSelect') out[f.key] = Array.isArray(v) ? [...v] : []
     else if (f.type === 'permissions') out[f.key] = v && typeof v === 'object' ? { ...v } : {}
+    else if (f.type === 'lineItems') out[f.key] = Array.isArray(v) ? v.map((i: any) => ({ ...i })) : []
     else if (f.type === 'date' && typeof v === 'string') out[f.key] = v.slice(0, 10)
     else out[f.key] = v ?? (f.type === 'checkbox' ? false : '')
   }

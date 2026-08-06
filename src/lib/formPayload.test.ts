@@ -131,3 +131,36 @@ describe('buildPayload — permissions matrix', () => {
     expect(payload.permissions).toEqual({})
   })
 })
+
+describe('buildPayload — lineItems', () => {
+  const f = (key: string) => ({ key, label: key, type: 'lineItems' as const })
+
+  it('normalizes numbers and computes line totals', () => {
+    const { payload } = buildPayload(
+      [f('items')],
+      { items: [{ id: 'i1', description: 'Cable', quantity: '2', unit: 'm', unitPrice: '500', total: 0 }] }
+    )
+    expect(payload.items).toEqual([{ id: 'i1', description: 'Cable', quantity: 2, unit: 'm', unitPrice: 500, total: 1000 }])
+  })
+
+  it('drops fully-empty rows but keeps partial ones', () => {
+    const { payload } = buildPayload(
+      [f('items')],
+      {
+        items: [
+          { id: 'i1', description: '', quantity: '', unit: '', unitPrice: '', total: 0 },
+          { id: 'i2', description: 'Tower', quantity: '1', unit: 'u', unitPrice: '9000', total: 0 },
+          { id: 'i3', description: '', quantity: '', unit: '', unitPrice: '5', total: 0 },
+        ],
+      }
+    )
+    expect(payload.items).toHaveLength(2)
+    expect(payload.items[0].description).toBe('Tower')
+    expect(payload.items[1].unitPrice).toBe(5)
+  })
+
+  it('normalizes a missing items value to []', () => {
+    const { payload } = buildPayload([f('items')], {})
+    expect(payload.items).toEqual([])
+  })
+})

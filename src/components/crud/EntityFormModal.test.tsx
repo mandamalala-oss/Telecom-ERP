@@ -330,3 +330,81 @@ describe('EntityFormModal — permissions matrix', () => {
     expect((within(financeRow).getByRole('radio', { name: 'View' }) as HTMLInputElement).checked).toBe(true)
   })
 })
+
+describe('EntityFormModal — line items', () => {
+  const itemsField: FieldConfig = { key: 'items', label: 'Line Items', type: 'lineItems' }
+  const moneyFields: FieldConfig[] = [
+    itemsField,
+    { key: 'subtotal', label: 'Subtotal', type: 'number' },
+    { key: 'taxRate', label: 'Tax Rate %', type: 'number' },
+    { key: 'tax', label: 'Tax', type: 'number' },
+    { key: 'total', label: 'Total', type: 'number' },
+  ]
+
+  it('enters line items and derives subtotal/tax/total', async () => {
+    const onSubmit = renderForm(moneyFields)
+    await userEvent.click(screen.getByRole('button', { name: '+ Add line' }))
+
+    const rows = () => screen.getAllByPlaceholderText('Designation')
+    await userEvent.type(rows()[0], 'Cable 4G')
+    await userEvent.type(screen.getByPlaceholderText('Qty'), '2')
+    await userEvent.type(screen.getByPlaceholderText('Unit'), 'm')
+    await userEvent.type(screen.getByPlaceholderText('Price'), '500')
+    // 2 × 500 = 1000 subtotal, tax rate 0 → tax 0, total 1000
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+
+    const payload = onSubmit.mock.calls[0][0]
+    expect(payload.items).toHaveLength(1)
+    expect(payload.items[0]).toMatchObject({ description: 'Cable 4G', quantity: 2, unit: 'm', unitPrice: 500, total: 1000 })
+    expect(payload.subtotal).toBe(1000)
+    expect(payload.total).toBe(1000)
+  })
+
+  it('applies the tax rate to the derived totals', async () => {
+    const onSubmit = renderForm(moneyFields)
+    await userEvent.click(screen.getByRole('button', { name: '+ Add line' }))
+    await userEvent.type(screen.getByPlaceholderText('Qty'), '3')
+    await userEvent.type(screen.getByPlaceholderText('Price'), '1000')
+    await userEvent.type(screen.getByLabelText('Tax Rate %'), '10')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+
+    const payload = onSubmit.mock.calls[0][0]
+    expect(payload.subtotal).toBe(3000)
+    expect(payload.tax).toBe(300)
+    expect(payload.total).toBe(3300)
+  })
+
+  it('zeroes the tax when the rate is cleared so no stale tax survives', async () => {
+    const onSubmit = renderForm(moneyFields)
+    await userEvent.click(screen.getByRole('button', { name: '+ Add line' }))
+    await userEvent.type(screen.getByPlaceholderText('Qty'), '3')
+    await userEvent.type(screen.getByPlaceholderText('Price'), '1000')
+    const rate = screen.getByLabelText('Tax Rate %')
+    await userEvent.type(rate, '10')
+    await userEvent.clear(rate) // rate back to blank → tax must drop to 0
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+
+    const payload = onSubmit.mock.calls[0][0]
+    expect(payload.subtotal).toBe(3000)
+    expect(payload.tax).toBe(0)
+    expect(payload.total).toBe(3000)
+  })
+
+  it('removes a line and pre-fills from edit initial', async () => {
+    const onSubmit = renderForm(moneyFields, {
+      items: [{ id: 'i1', description: 'Tower', quantity: 1, unit: 'u', unitPrice: 9000, total: 9000 }],
+      subtotal: 9000,
+      taxRate: 0,
+      tax: 0,
+      total: 9000,
+    })
+    expect(screen.getByDisplayValue('Tower')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Remove line' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0].items).toHaveLength(0)
+  })
+})

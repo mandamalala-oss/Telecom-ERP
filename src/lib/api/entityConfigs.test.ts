@@ -9,7 +9,7 @@ import { toSnake } from './case'
 // every form field must map to a real schema column (snake_case).
 const schemaPath = fileURLToPath(new URL('../../../database/schema.sql', import.meta.url))
 
-const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'select', 'checkbox', 'tags', 'multiSelect', 'sitePicker', 'permissions']
+const FIELD_TYPES = ['text', 'textarea', 'number', 'date', 'select', 'checkbox', 'tags', 'multiSelect', 'sitePicker', 'permissions', 'lineItems']
 
 /** Parse `database/schema.sql` into { tableName: Set<columnName> }. */
 function parseSchema(): Record<string, Set<string>> {
