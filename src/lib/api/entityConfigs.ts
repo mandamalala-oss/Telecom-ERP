@@ -71,7 +71,13 @@ export const TABLE_MODULE: Record<string, string> = {
   documents: 'dashboard', // Documents is guarded by 'dashboard'
 }
 
-const REGIONS = ['Antananarivo', 'Fianarantsoa', 'Toamasina', 'Mahajanga', 'Toliara', 'Antsiranana', 'Antsirabe', 'Morondava']
+const REGIONS = [
+  'Alaotra-Mangoro', "Amoron'i Mania", 'Analamanga', 'Analanjirofo', 'Androy',
+  'Anosy', 'Atsimo-Andrefana', 'Atsimo-Atsinanana', 'Atsinanana', 'Betsiboka',
+  'Boeny', 'Bongolava', 'Diana', 'Fitovinany', 'Haute Matsiatra', 'Ihorombe',
+  'Itasy', 'Melaky', 'Menabe', 'Sava', 'Sofia', 'Vakinankaratra', 'Vatovavy',
+  'Ambatosoa',
+]
 const TECHS = ['2G', '3G', '4G', '4G+', '5G', 'MW', 'VSAT']
 
 export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
