@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Plus, Pencil, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -15,6 +15,7 @@ const fmt = (n: number) => (n ?? 0) >= 1e6 ? `${((n ?? 0)/1e6).toFixed(2)}M Ar` 
 const INVOICE_STATUSES = ['draft', 'sent', 'partially_paid', 'paid', 'overdue', 'cancelled']
 const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired']
 const PO_STATUSES = ['draft', 'approved', 'sent', 'partial', 'received', 'cancelled']
+const PAYMENT_METHODS = ['bank_transfer', 'mobile_money', 'check', 'cash']
 
 const STATUS_COLOR: Record<string, string> = {
   draft: 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300',
@@ -38,7 +39,7 @@ export function FinanceModule() {
   const { data: invoices, error: invErr, openCreate: newInv, openEdit: editInv, remove: removeInv, update: updateInvoice, create: createInvoice, modal: invModal, editable } = useEntityCrud<Invoice>(TABLES.invoices, 'Invoice')
   const { data: quotes, error: quoErr, openCreate: newQuo, openEdit: editQuo, remove: removeQuo, update: updateQuote, modal: quoModal } = useEntityCrud<Quote>(TABLES.quotes, 'Quote')
   const { data: pos, error: poErr, openCreate: newPo, openEdit: editPo, remove: removePo, update: updatePo, create: createPo, modal: poModal } = useEntityCrud<PurchaseOrder>(TABLES.purchaseOrders, 'Purchase Order')
-  const { data: payments, error: payErr, openCreate: newPay, openEdit: editPay, remove: removePay, create: createPayment, modal: payModal } = useEntityCrud<Payment>(
+  const { data: payments, error: payErr, openCreate: newPay, openEdit: editPay, remove: removePay, update: updatePayment, create: createPayment, modal: payModal } = useEntityCrud<Payment>(
     TABLES.payments, 'Payment', undefined, async (payment) => {
       // Keep invoice.paid in sync: revenue KPIs and balances read the
       // invoice row, so a payment must update it or they drift apart.
@@ -49,6 +50,10 @@ export function FinanceModule() {
     }
   )
   const [selInv, setSelInv] = useState<Invoice | null>(null)
+  const [selQuo, setSelQuo] = useState<Quote | null>(null)
+  const [selPo, setSelPo] = useState<PurchaseOrder | null>(null)
+  const [selPay, setSelPay] = useState<Payment | null>(null)
+  const [filterCustomer, setFilterCustomer] = useState('')
   const [actionError, setActionError] = useState<string | null>(null)
   // Row id whose status update is in flight — guards against double-firing a
   // transition (and thus duplicating the auto-created child doc).
@@ -65,6 +70,20 @@ export function FinanceModule() {
     return !!i.dueDate && (i.dueDate.slice(0, 10) < todayStr)
   })
   const totalPOs        = pos.reduce((s, p) => s + (p.total ?? 0), 0)
+
+  // Customer filter options across every tab (POs key on vendor).
+  const customerOptions = useMemo(() => {
+    const names = new Set<string>()
+    for (const i of invoices) if (i.customerName) names.add(i.customerName)
+    for (const q of quotes) if (q.customerName) names.add(q.customerName)
+    for (const p of pos) if (p.vendorName) names.add(p.vendorName)
+    for (const p of payments) if (p.customerName) names.add(p.customerName)
+    return [...names].sort((a, b) => a.localeCompare(b))
+  }, [invoices, quotes, pos, payments])
+  const visibleInvoices = filterCustomer ? invoices.filter(i => i.customerName === filterCustomer) : invoices
+  const visibleQuotes   = filterCustomer ? quotes.filter(q => q.customerName === filterCustomer) : quotes
+  const visiblePos      = filterCustomer ? pos.filter(p => p.vendorName === filterCustomer) : pos
+  const visiblePayments = filterCustomer ? payments.filter(p => p.customerName === filterCustomer) : payments
 
   const addForTab = () => {
     if (tab === 'invoices') newInv()
@@ -151,6 +170,17 @@ export function FinanceModule() {
     }
   }
 
+  // Payment method edited straight from the table.
+  const changePaymentMethod = async (pay: Payment, method: string) => {
+    if (method === pay.method) return
+    try {
+      setActionError(null)
+      await updatePayment(pay.id!, { method: method as Payment['method'] })
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    }
+  }
+
   // Deleting a payment must undo its effect on the invoice's paid amount.
   const removePayment = async (pay: Payment) => {
     const inv = pay.invoiceId ? invoices.find(i => i.id === pay.invoiceId) : undefined
@@ -197,11 +227,22 @@ export function FinanceModule() {
             </button>
           ))}
         </div>
-        {editable && (
-          <Button icon={<Plus className="w-4 h-4"/>} onClick={addForTab}>
-            New {tab === 'invoices' ? 'Invoice' : tab === 'quotes' ? 'Quote' : tab === 'purchase_orders' ? 'PO' : 'Payment'}
-          </Button>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          <select
+            value={filterCustomer}
+            onChange={e => setFilterCustomer(e.target.value)}
+            className="text-xs font-semibold rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-slate-700 dark:text-slate-200 cursor-pointer focus:outline-none"
+            title="Filter by customer"
+          >
+            <option value="">All customers</option>
+            {customerOptions.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          {editable && (
+            <Button icon={<Plus className="w-4 h-4"/>} onClick={addForTab}>
+              New {tab === 'invoices' ? 'Invoice' : tab === 'quotes' ? 'Quote' : tab === 'purchase_orders' ? 'PO' : 'Payment'}
+            </Button>
+          )}
+        </div>
       </div>
       {errorForTab && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{errorForTab}</div>}
       {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
@@ -214,7 +255,7 @@ export function FinanceModule() {
                 {['Number','Customer','Subtotal','Tax','Total','Paid','Balance','Issue Date','Due Date','Status',''].map(h => <th key={h} className="th">{h}</th>)}
               </tr></thead>
               <tbody>
-                {invoices.map(inv => (
+                {visibleInvoices.map(inv => (
                   <tr key={inv.id} className="tr-hover cursor-pointer" onClick={() => setSelInv(inv)}>
                     <td className="td font-mono text-xs font-bold text-brand-600 dark:text-brand-400">{inv.number}</td>
                     <td className="td font-semibold">{inv.customerName}</td>
@@ -265,8 +306,8 @@ export function FinanceModule() {
                 {['Number','Customer','Items','Subtotal','Tax','Total','Valid Until','Status',''].map(h => <th key={h} className="th">{h}</th>)}
               </tr></thead>
               <tbody>
-                {quotes.map(q => (
-                  <tr key={q.id} className="tr-hover">
+                {visibleQuotes.map(q => (
+                  <tr key={q.id} className="tr-hover cursor-pointer" onClick={() => setSelQuo(q)}>
                     <td className="td font-mono text-xs font-bold text-brand-600 dark:text-brand-400">{q.number}</td>
                     <td className="td font-semibold">{q.customerName}</td>
                     <td className="td text-center">{(q.items ?? []).length}</td>
@@ -279,6 +320,7 @@ export function FinanceModule() {
                         <select
                           value={q.status}
                           onChange={e => changeQuoteStatus(q, e.target.value)}
+                          onClick={e => e.stopPropagation()}
                           disabled={statusBusy === q.id}
                           className={`text-xs font-semibold rounded-full border-0 px-2 py-1 cursor-pointer focus:outline-none ${STATUS_COLOR[q.status] ?? 'bg-slate-100 text-slate-600'}`}
                           title="Change status"
@@ -313,8 +355,8 @@ export function FinanceModule() {
                 {['Number','Vendor','Items','Total','Order Date','Expected Delivery','Status',''].map(h => <th key={h} className="th">{h}</th>)}
               </tr></thead>
               <tbody>
-                {pos.map(po => (
-                  <tr key={po.id} className="tr-hover">
+                {visiblePos.map(po => (
+                  <tr key={po.id} className="tr-hover cursor-pointer" onClick={() => setSelPo(po)}>
                     <td className="td font-mono text-xs font-bold text-brand-600 dark:text-brand-400">{po.number}</td>
                     <td className="td font-semibold">{po.vendorName}</td>
                     <td className="td text-center">{(po.items ?? []).length}</td>
@@ -326,6 +368,7 @@ export function FinanceModule() {
                         <select
                           value={po.status}
                           onChange={e => changePoStatus(po, e.target.value)}
+                          onClick={e => e.stopPropagation()}
                           disabled={statusBusy === po.id}
                           className={`text-xs font-semibold rounded-full border-0 px-2 py-1 cursor-pointer focus:outline-none ${STATUS_COLOR[po.status] ?? 'bg-slate-100 text-slate-600'}`}
                           title="Change status"
@@ -360,13 +403,26 @@ export function FinanceModule() {
                 {['Date','Invoice','Customer','Amount','Method','Reference',''].map(h => <th key={h} className="th">{h}</th>)}
               </tr></thead>
               <tbody>
-                {payments.map(pay => (
-                  <tr key={pay.id} className="tr-hover">
+                {visiblePayments.map(pay => (
+                  <tr key={pay.id} className="tr-hover cursor-pointer" onClick={() => setSelPay(pay)}>
                     <td className="td text-xs text-slate-500">{pay.date}</td>
                     <td className="td font-mono text-xs font-bold text-brand-600 dark:text-brand-400">{pay.invoiceNumber}</td>
                     <td className="td font-semibold">{pay.customerName}</td>
                     <td className="td font-bold text-green-600">{fmt(pay.amount)}</td>
-                    <td className="td capitalize text-xs"><Badge status="sent">{pay.method?.replace('_',' ')}</Badge></td>
+                    <td className="td" onClick={e => e.stopPropagation()}>
+                      {editable ? (
+                        <select
+                          value={pay.method ?? ''}
+                          onChange={e => changePaymentMethod(pay, e.target.value)}
+                          className="text-xs font-semibold rounded-full border-0 px-2 py-1 cursor-pointer focus:outline-none bg-slate-100 text-slate-600 capitalize"
+                          title="Change method"
+                        >
+                          {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m.replace('_',' ')}</option>)}
+                        </select>
+                      ) : (
+                        <span className="text-xs capitalize text-slate-500">{pay.method?.replace('_',' ') ?? '—'}</span>
+                      )}
+                    </td>
                     <td className="td font-mono text-xs text-slate-400">{pay.reference}</td>
                     <td className="td whitespace-nowrap" onClick={e => e.stopPropagation()}>
                       {editable && (
@@ -441,6 +497,134 @@ export function FinanceModule() {
       )}
 
       {invModal}
+      {selQuo && (
+        <Modal open title={`Quote ${selQuo.number}`} onClose={() => setSelQuo(null)} size="xl">
+          <div className="space-y-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-2xl font-black text-slate-900 dark:text-white">{selQuo.number}</p>
+                <p className="text-sm text-slate-500">{selQuo.customerName}</p>
+              </div>
+              <Badge status={selQuo.status} className="text-sm px-3 py-1" />
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {[
+                { l: 'Valid Until', v: selQuo.validUntil ?? '—' },
+                { l: 'Tax Rate',    v: `${selQuo.taxRate}%` },
+                { l: 'Project',     v: selQuo.projectId ?? '—' },
+              ].map(item => (
+                <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{item.l}</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{item.v}</p>
+                </div>
+              ))}
+            </div>
+            <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-slate-50 dark:bg-slate-700/50">
+                  <tr>{['Description','Qty','Unit','Unit Price','Total'].map(h => <th key={h} className="th">{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {(selQuo.items ?? []).map(item => (
+                    <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700">
+                      <td className="td">{item.description}</td>
+                      <td className="td text-center">{item.quantity}</td>
+                      <td className="td text-xs text-slate-500">{item.unit}</td>
+                      <td className="td">{fmt(item.unitPrice)}</td>
+                      <td className="td font-bold">{fmt(item.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="bg-slate-50 dark:bg-slate-700/30 p-4 border-t border-slate-200 dark:border-slate-700">
+                <div className="flex flex-col items-end gap-1.5 text-sm">
+                  <div className="flex gap-8"><span className="text-slate-500">Subtotal</span><span className="font-semibold">{fmt(selQuo.subtotal)}</span></div>
+                  <div className="flex gap-8"><span className="text-slate-500">Tax ({selQuo.taxRate}%)</span><span className="font-semibold">{fmt(selQuo.tax)}</span></div>
+                  <div className="flex gap-8 text-lg font-black"><span>Total</span><span className="text-brand-600">{fmt(selQuo.total)}</span></div>
+                </div>
+              </div>
+            </div>
+            {selQuo.notes && <p className="text-sm text-slate-500 italic">{selQuo.notes}</p>}
+          </div>
+        </Modal>
+      )}
+      {selPo && (
+        <Modal open title={`Purchase Order ${selPo.number}`} onClose={() => setSelPo(null)} size="xl">
+          <div className="space-y-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-2xl font-black text-slate-900 dark:text-white">{selPo.number}</p>
+                <p className="text-sm text-slate-500">{selPo.vendorName}</p>
+              </div>
+              <Badge status={selPo.status} className="text-sm px-3 py-1" />
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {[
+                { l: 'Order Date',         v: selPo.orderDate ?? '—' },
+                { l: 'Expected Delivery',  v: selPo.expectedDelivery ?? '—' },
+                { l: 'Project',            v: selPo.projectId ?? '—' },
+              ].map(item => (
+                <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{item.l}</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{item.v}</p>
+                </div>
+              ))}
+            </div>
+            <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+              <table className="w-full">
+                <thead className="bg-slate-50 dark:bg-slate-700/50">
+                  <tr>{['Description','Qty','Unit','Unit Price','Total'].map(h => <th key={h} className="th">{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {(selPo.items ?? []).map(item => (
+                    <tr key={item.id} className="border-t border-slate-100 dark:border-slate-700">
+                      <td className="td">{item.description}</td>
+                      <td className="td text-center">{item.quantity}</td>
+                      <td className="td text-xs text-slate-500">{item.unit}</td>
+                      <td className="td">{fmt(item.unitPrice)}</td>
+                      <td className="td font-bold">{fmt(item.total)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="bg-slate-50 dark:bg-slate-700/30 p-4 border-t border-slate-200 dark:border-slate-700">
+                <div className="flex flex-col items-end gap-1.5 text-sm">
+                  <div className="flex gap-8"><span className="text-slate-500">Subtotal</span><span className="font-semibold">{fmt(selPo.subtotal)}</span></div>
+                  <div className="flex gap-8"><span className="text-slate-500">Tax</span><span className="font-semibold">{fmt(selPo.tax)}</span></div>
+                  <div className="flex gap-8 text-lg font-black"><span>Total</span><span className="text-brand-600">{fmt(selPo.total)}</span></div>
+                </div>
+              </div>
+            </div>
+            {selPo.notes && <p className="text-sm text-slate-500 italic">{selPo.notes}</p>}
+          </div>
+        </Modal>
+      )}
+      {selPay && (
+        <Modal open title="Payment" onClose={() => setSelPay(null)} size="lg">
+          <div className="space-y-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-2xl font-black text-slate-900 dark:text-white">{fmt(selPay.amount)}</p>
+                <p className="text-sm text-slate-500">{selPay.customerName}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {[
+                { l: 'Date',      v: selPay.date ?? '—' },
+                { l: 'Invoice',   v: selPay.invoiceNumber ?? '—' },
+                { l: 'Method',    v: selPay.method?.replace('_',' ') ?? '—' },
+                { l: 'Reference', v: selPay.reference ?? '—' },
+              ].map(item => (
+                <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{item.l}</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{item.v}</p>
+                </div>
+              ))}
+            </div>
+            {selPay.notes && <p className="text-sm text-slate-500 italic">{selPay.notes}</p>}
+          </div>
+        </Modal>
+      )}
       {quoModal}
       {poModal}
       {payModal}
