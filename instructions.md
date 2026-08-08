@@ -51,12 +51,12 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ## ✅ Current state (verified 2026-08)
 
-- `npm test` → **171/171 passing** (14 files)
+- `npm test` → **183/183 passing** (14 files)
 - `npx tsc --noEmit` → clean (test files are inside `src`, so they're typechecked too)
 - `npm run build` → succeeds (pre-existing chunk-size warning only, unrelated)
-- HEAD: `bcd4c87` — **everything pushed to `origin/main`** (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked).
+- HEAD: pending Milestone 15 commit — **everything else pushed to `origin/main`** (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked).
 - Access model is now **grant-based (CEO-only)** — see Milestone 13 below. `ROLE_PERMISSIONS` is GONE from `src/types`; roles are labels only (DB RLS still role-scoped).
-- Finance automation + Supply/Trading projects — see **Milestone 14** below (migrations 014–018 already applied; **019 pending on the live DB**).
+- Finance automation + Supply/Trading projects — see **Milestone 14** below; auto-create Project from SUPPLY+Accepted PO — see **Milestone 15** below (migrations 014–018 applied; **019 AND 020 pending on the live DB**).
 - Milestone 10 changed: `src/App.tsx`, `src/contexts/AuthContext.tsx` (+`.test.tsx`), `src/components/auth/` (LoginPage + test), `src/components/layout/Header.tsx`, `database/schema.sql`, `schema.sql`; new `database/migrations/012_auth_rls.sql`
 - Milestone 8 changed: `src/components/crud/EntityFormModal.tsx` + `.test.tsx`, `src/lib/hooks/useEntityCrud.tsx`, `src/lib/api/entityConfigs.ts` + `.test.ts`, `src/lib/evm.ts` + `.test.ts`, `src/modules/controls/EVMModule.tsx`
 - Milestone 6 changed: `database/schema.sql`, `schema.sql`, `src/lib/api/entityConfigs.ts`, `src/lib/evm.ts` + `.test.ts`, `src/modules/controls/EVMModule.tsx`, `src/types/index.ts`; new `database/migrations/011_add_evm_po.sql`
@@ -98,6 +98,28 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 - Save writes back `budget = totalCost` (BAC), `spent = totalCost` (AC — **not 0**, both create and edit), `revenue = totalSelling` (PO); margin = PO − AC. Modal **closes on save**; progress **auto-100% when completed**; exact prices everywhere (`fmt` never abbreviates to "3.3M").
 - Cards: 📡/📦 badge, delivery row for supply (status/items/PO ref), type filter, summary breakdown by type, supply detail view (goods + EVM). Telecom path untouched (PhaseTimeline/syncSites).
 - `useSupplyItems` hook loads/saves goods lines (delete+insert, non-atomic like `syncSites`).
+
+---
+
+### Milestone 15 — Auto-create Project from SUPPLY + Accepted PO (per `auto-project.md`)
+
+**New field:** `purchase_orders.delivery_type` — single-select **`ASP` | `SUPPLY`**, **no default** (shown in the PO New/Edit modal + PO detail modal). PO status list gains **`accepted`** (was draft/approved/sent/partial/received/cancelled).
+
+**Trigger** (`FinanceModule.maybeCreateProjectFromPo`): whenever a PO is `delivery_type = SUPPLY` **and** `status = accepted` — fires regardless of which condition became true last (inline status select AND modal create/edit, via `onCreated`/`onUpdated`). **Idempotent**: the auto Project stores the PO number in `projects.po_reference`; the trigger re-checks that link with a fresh DB read before inserting, so re-saving never duplicates (and projects created in other sessions are seen).
+
+**Mapping** (`financeWorkflows.projectFromSupplyPo`, pure + unit-tested):
+- Customer ← PO (in this ERP the PO's vendor IS the client: quote.customer → po.vendor); name = PO number; `po_reference` = PO number
+- Start = acceptance date (trigger day); End = +30d; Delivery Deadline = +15d; Delivery Status = **pending**
+- Goods lines ← line items of the Quote(s) linked to the PO (via new `purchase_orders.quote_id`, set by quote-accepted automation; fallback = quote number mentioned in PO notes): Description/Unit/Qty/Unit-Price→Selling; purchase price 0 (manual). No linked Quote → Project still created, without goods lines
+- Supply convention: budget = spent = 0 (purchase cost manual), revenue = total selling
+
+**Atomicity**: `database/migrations/020_po_delivery_type_auto_project.sql` adds `insert_project_with_goods(jsonb, jsonb)` — inserts the Project + its `project_supply_items` rows in **one transaction** (called via `supabase.rpc`; security invoker, so RLS still applies). **Migration 020 NOT yet run on the live DB** (019 also pending).
+
+**Project form:** Customer Contact in `SupplyProjectModal` is now a Select **restricted to Contacts of the selected customer** (was free text); legacy free-text values survive an edit. Auto-created projects leave it blank (POs/Quotes have no contact field).
+
+**Tests:** 12 new in `financeWorkflows.test.ts` (acceptance checks #1/#2/#3, multi-quote, no-quote, date math, notes/quoteId linking, boundary-safe number matching) → **183/183**, `tsc` clean, build green.
+
+**Assumptions:** "PO status = Accepted" implemented as a **new `accepted` PO status** (no prior match); project name = PO number; contact on PO/Quote not added (spec's "if any" branch); no unique index on `po_reference` (app-level idempotency check only, matching `hasAutoDoc` style).
 
 ---
 

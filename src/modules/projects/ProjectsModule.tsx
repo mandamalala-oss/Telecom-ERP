@@ -11,7 +11,7 @@ import { useSupplyItems, supplyTotals } from '@/lib/hooks/useSupplyItems'
 import { TABLES } from '@/lib/api/entityConfigs'
 import { projectFinance } from '@/lib/projectFinance'
 import { supabase } from '@/lib/supabase'
-import type { Project, PhaseDetail, ProjectSite, Site, SupplyItem, ProjectType, DeliveryStatus, Region, Quote, Company } from '@/types'
+import type { Project, PhaseDetail, ProjectSite, Site, SupplyItem, ProjectType, DeliveryStatus, Region, Quote, Company, Contact } from '@/types'
 
 const fmt = (n: number | null | undefined) => {
   // Always the exact amount — never abbreviated (e.g. "3.3M Ar").
@@ -133,6 +133,20 @@ function SupplyProjectModal({ open, project, items, itemsLoading, editable, onCl
   // Quote + customer-module lookups for pre-filling a supply project.
   const { data: quotes } = useEntity<Quote>(TABLES.quotes)
   const { data: companies } = useEntity<Company>(TABLES.companies)
+  const { data: contacts } = useEntity<Contact>(TABLES.contacts)
+
+  // Customer Contact options are ALWAYS restricted to Contacts linked to the
+  // selected customer (company_id == customerId) — never the global list.
+  const customerContacts = useMemo(() =>
+    contacts.filter(c => c.companyId === form.customerId),
+    [contacts, form.customerId]
+  )
+  const contactLabel = (c: Contact) => [c.firstName, c.lastName].filter(Boolean).join(' ')
+  // A value saved before this restriction (free text) must survive an edit.
+  const legacyContact = form.customerContact &&
+    !customerContacts.some(c => contactLabel(c) === form.customerContact)
+    ? form.customerContact
+    : ''
 
   // Seed the form whenever the modal opens (create → blank, edit → project).
   useEffect(() => {
@@ -233,7 +247,18 @@ function SupplyProjectModal({ open, project, items, itemsLoading, editable, onCl
           <Input label="Project Manager" value={form.pm} onChange={(e) => set('pm', e.target.value)} placeholder="PM name" />
           <Input label="Start Date" type="date" value={form.startDate} onChange={(e) => set('startDate', e.target.value)} />
           <Input label="End Date" type="date" value={form.endDate} onChange={(e) => set('endDate', e.target.value)} />
-          <Input label="Customer Contact" value={form.customerContact} onChange={(e) => set('customerContact', e.target.value)} placeholder="Phone / email" />
+          <Select label="Customer Contact" value={form.customerContact}
+            onChange={(e) => set('customerContact', e.target.value)}
+            disabled={!form.customerId}
+            title={form.customerId ? undefined : 'Select a customer first — contacts are restricted to that customer'}>
+            <option value="">{form.customerId ? '— none —' : 'Select a customer first…'}</option>
+            {legacyContact && <option value={legacyContact}>{legacyContact}</option>}
+            {customerContacts.map(c => (
+              <option key={c.id} value={contactLabel(c)}>
+                {contactLabel(c)}{c.title ? ` — ${c.title}` : ''}{c.email ? ` (${c.email})` : ''}
+              </option>
+            ))}
+          </Select>
           <Input label="PO Reference" value={form.poReference} onChange={(e) => set('poReference', e.target.value)} placeholder="Client PO number" />
           <Input label="Delivery Deadline" type="date" value={form.deliveryDeadline} onChange={(e) => set('deliveryDeadline', e.target.value)} />
           <Select label="Delivery Status" value={form.deliveryStatus} onChange={(e) => set('deliveryStatus', e.target.value)}>

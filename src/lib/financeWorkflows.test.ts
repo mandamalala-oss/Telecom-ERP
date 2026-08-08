@@ -1,10 +1,11 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { autoPaymentForPaid, poFromAcceptedQuote, invoiceFromReceivedPo, remainingOnInvoice, isAutoPayment, nextNumberFor, hasAutoDoc } from './financeWorkflows'
+import { autoPaymentForPaid, poFromAcceptedQuote, invoiceFromReceivedPo, remainingOnInvoice, isAutoPayment, nextNumberFor, hasAutoDoc, addDays, quotesLinkedToPo, projectFromSupplyPo } from './financeWorkflows'
 
 const invoice = { id: 'inv1', number: 'INV-001', customerName: 'ACME', total: 1000 }
 
 const quote = {
+  id: 'q1',
   number: 'QT-001',
   customerId: 'c1',
   customerName: 'ACME',
@@ -63,6 +64,7 @@ describe('financeWorkflows — accepted quote → PO', () => {
     expect(out.items[0].description).toBe('Cable')
     expect(out.number).toBe('PO-2026-0001')
     expect(out.orderDate).toBe('2026-08-05')
+    expect(out.quoteId).toBe('q1')
     expect(out.notes).toContain('QT-001')
     // expected_delivery must be omitted, not an empty string (date column).
     expect('expectedDelivery' in out).toBe(false)
@@ -112,5 +114,114 @@ describe('financeWorkflows — helpers', () => {
     expect(hasAutoDoc(pos, 'QT-001')).toBe(true)
     expect(hasAutoDoc(pos, 'QT-999')).toBe(false)
     expect(hasAutoDoc([], 'QT-001')).toBe(false)
+  })
+})
+
+describe('financeWorkflows — addDays', () => {
+  it('adds calendar days across month boundaries', () => {
+    expect(addDays('2026-08-05', 30)).toBe('2026-09-04')
+    expect(addDays('2026-08-05', 15)).toBe('2026-08-20')
+    expect(addDays('2026-12-20', 15)).toBe('2027-01-04')
+  })
+
+  it('is a no-op on empty input', () => {
+    expect(addDays('', 30)).toBe('')
+  })
+})
+
+describe('financeWorkflows — quotesLinkedToPo', () => {
+  const qa = { ...quote, id: 'qa', number: 'QT-001' }
+  const qb = { ...quote, id: 'qb', number: 'QT-002', items: [{ id: 'i2', description: 'Router', quantity: 1, unit: 'u', unitPrice: 900, total: 900 }] }
+
+  it('matches by explicit quote_id first', () => {
+    expect(quotesLinkedToPo({ quoteId: 'qb', notes: '' }, [qa, qb]).map(q => q.id)).toEqual(['qb'])
+  })
+
+  it('falls back to the quote number mentioned in the PO notes', () => {
+    const po = { quoteId: undefined, notes: 'Auto-created from accepted quote QT-001' }
+    expect(quotesLinkedToPo(po, [qa, qb]).map(q => q.id)).toEqual(['qa'])
+  })
+
+  it('does not match a shorter number inside a longer one (QT-001 vs QT-0012)', () => {
+    const po = { quoteId: undefined, notes: 'Auto-created from accepted quote QT-0012' }
+    expect(quotesLinkedToPo(po, [qa, qb])).toEqual([])
+  })
+
+  it('returns nothing for a PO with no linked quote', () => {
+    expect(quotesLinkedToPo({ quoteId: undefined, notes: 'Manual PO' }, [qa, qb])).toEqual([])
+  })
+})
+
+describe('financeWorkflows — SUPPLY + Accepted PO → auto Project', () => {
+  const supplyPo = {
+    number: 'PO-2026-0001',
+    vendorId: 'c1',
+    vendorName: 'ACME',
+    quoteId: 'q1',
+    notes: 'Auto-created from accepted quote QT-001',
+    deliveryType: 'SUPPLY' as const,
+    status: 'accepted' as const,
+  }
+
+  it('acceptance #1 — ASP + Accepted never creates a project', () => {
+    expect(projectFromSupplyPo({ ...supplyPo, deliveryType: 'ASP' }, [quote], '2026-08-05')).toBeNull()
+  })
+
+  it('acceptance #2 — SUPPLY but not Accepted never creates a project', () => {
+    expect(projectFromSupplyPo({ ...supplyPo, status: 'sent' }, [quote], '2026-08-05')).toBeNull()
+    expect(projectFromSupplyPo({ ...supplyPo, deliveryType: undefined, status: 'accepted' }, [quote], '2026-08-05')).toBeNull()
+  })
+
+  it('acceptance #3 — SUPPLY + Accepted creates exactly one correctly-mapped project', () => {
+    const out = projectFromSupplyPo(supplyPo, [quote], '2026-08-05')
+    expect(out).not.toBeNull()
+    const { project, goodsLines } = out!
+    // Customer comes from the source PO (whose vendor IS the client here).
+    expect(project.customerId).toBe('c1')
+    expect(project.customerName).toBe('ACME')
+    expect(project.poReference).toBe('PO-2026-0001')
+    expect(project.name).toBe('PO-2026-0001')
+    // Dates: acceptance date, +30d end, +15d delivery.
+    expect(project.startDate).toBe('2026-08-05')
+    expect(project.endDate).toBe('2026-09-04')
+    expect(project.deliveryDeadline).toBe('2026-08-20')
+    expect(project.deliveryStatus).toBe('pending')
+    expect(project.projectType).toBe('supply_trading')
+    expect(project.status).toBe('not_started')
+    // Supply convention: BAC/AC = purchase cost (0 here — purchase is manual),
+    // PO/revenue = total selling (2 × 500).
+    expect(project.budget).toBe(0)
+    expect(project.spent).toBe(0)
+    expect(project.revenue).toBe(1000)
+    // Goods lines: one per quote line, mapped from the quote's line items.
+    expect(goodsLines).toHaveLength(1)
+    expect(goodsLines[0].description).toBe('Cable')
+    expect(goodsLines[0].unit).toBe('m')
+    expect(goodsLines[0].qty).toBe(2)
+    expect(goodsLines[0].sellingPrice).toBe(500)
+    expect(goodsLines[0].purchasePrice).toBe(0)
+    expect(goodsLines[0].code).toBe('1')
+  })
+
+  it('pulls goods lines from every quote linked to the PO', () => {
+    const q2 = { ...quote, id: 'q2', number: 'QT-002', items: [{ id: 'i2', description: 'Router', quantity: 1, unit: 'u', unitPrice: 900, total: 900 }] }
+    const out = projectFromSupplyPo({ ...supplyPo, quoteId: undefined, notes: 'Auto-created from accepted quote QT-001 and QT-002' }, [quote, q2], '2026-08-05')
+    expect(out!.goodsLines).toHaveLength(2)
+    expect(out!.project.revenue).toBe(1900)
+    expect(out!.goodsLines[1].code).toBe('2')
+  })
+
+  it('still creates the project when no quote is linked — without goods lines', () => {
+    const out = projectFromSupplyPo({ ...supplyPo, quoteId: undefined, notes: 'Manual PO' }, [quote], '2026-08-05')
+    expect(out).not.toBeNull()
+    expect(out!.goodsLines).toEqual([])
+    expect(out!.project.revenue).toBe(0)
+  })
+
+  it('omits date fields entirely when no acceptance date is available', () => {
+    const out = projectFromSupplyPo(supplyPo, [quote], '')
+    expect(out!.project.startDate).toBeUndefined()
+    expect(out!.project.endDate).toBeUndefined()
+    expect(out!.project.deliveryDeadline).toBeUndefined()
   })
 })

@@ -7,14 +7,15 @@ import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { TABLES } from '@/lib/api/entityConfigs'
 import { resolvePaidOnStatusChange } from '@/lib/invoiceStatus'
-import { autoPaymentForPaid, poFromAcceptedQuote, invoiceFromReceivedPo, isAutoPayment, nextNumberFor, hasAutoDoc } from '@/lib/financeWorkflows'
+import { autoPaymentForPaid, poFromAcceptedQuote, invoiceFromReceivedPo, isAutoPayment, nextNumberFor, hasAutoDoc, projectFromSupplyPo } from '@/lib/financeWorkflows'
+import { supabase } from '@/lib/supabase'
 import type { Quote, Invoice, PurchaseOrder, Payment } from '@/types'
 
 const fmt = (n: number) => (n ?? 0) >= 1e6 ? `${((n ?? 0)/1e6).toFixed(2)}M Ar` : `${(n ?? 0).toLocaleString()} Ar`
 
 const INVOICE_STATUSES = ['draft', 'sent', 'partially_paid', 'paid', 'overdue', 'cancelled']
 const QUOTE_STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired']
-const PO_STATUSES = ['draft', 'approved', 'sent', 'partial', 'received', 'cancelled']
+const PO_STATUSES = ['draft', 'approved', 'sent', 'partial', 'accepted', 'received', 'cancelled']
 const PAYMENT_METHODS = ['bank_transfer', 'mobile_money', 'check', 'cash']
 
 const STATUS_COLOR: Record<string, string> = {
@@ -38,7 +39,17 @@ export function FinanceModule() {
   const [tab, setTab] = useState<Tab>('invoices')
   const { data: invoices, error: invErr, openCreate: newInv, openEdit: editInv, remove: removeInv, update: updateInvoice, create: createInvoice, modal: invModal, editable } = useEntityCrud<Invoice>(TABLES.invoices, 'Invoice')
   const { data: quotes, error: quoErr, openCreate: newQuo, openEdit: editQuo, remove: removeQuo, update: updateQuote, modal: quoModal } = useEntityCrud<Quote>(TABLES.quotes, 'Quote')
-  const { data: pos, error: poErr, openCreate: newPo, openEdit: editPo, remove: removePo, update: updatePo, create: createPo, modal: poModal } = useEntityCrud<PurchaseOrder>(TABLES.purchaseOrders, 'Purchase Order')
+  const { data: pos, error: poErr, openCreate: newPo, openEdit: editPo, remove: removePo, update: updatePo, create: createPo, modal: poModal } = useEntityCrud<PurchaseOrder>(
+    TABLES.purchaseOrders, 'Purchase Order',
+    undefined,
+    // SUPPLY + Accepted PO → auto-create its Project (also on create, e.g.
+    // when the modal saves a PO that already is SUPPLY + accepted).
+    async (row) => { await maybeCreateProjectFromPo(row) },
+    undefined,
+    // delivery_type switched to SUPPLY on an already-Accepted PO must fire
+    // too — the trigger reads the fresh row, whichever field changed last.
+    async (row) => { await maybeCreateProjectFromPo(row) }
+  )
   const { data: payments, error: payErr, openCreate: newPay, openEdit: editPay, remove: removePay, update: updatePayment, create: createPayment, modal: payModal } = useEntityCrud<Payment>(
     TABLES.payments, 'Payment', undefined, async (payment) => {
       // Keep invoice.paid in sync: revenue KPIs and balances read the
@@ -66,6 +77,28 @@ export function FinanceModule() {
   // invoices still labeled 'sent'/'partially_paid' past their due date count.
   const today = new Date()
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+
+  // SUPPLY + Accepted PO → auto-create exactly one supply/trading Project.
+  // Idempotent: the Project stores the triggering PO's number in po_reference,
+  // and we re-check that link in the DB before inserting (so re-saving the PO
+  // can never duplicate — a fresh read also covers projects created in other
+  // sessions). Project row + goods lines go through insert_project_with_goods,
+  // which commits both in a single transaction.
+  const maybeCreateProjectFromPo = async (po: PurchaseOrder) => {
+    const built = projectFromSupplyPo(po, quotes, todayStr)
+    if (!built) return
+    const { data: existing } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('po_reference', po.number)
+      .limit(1)
+    if (existing && existing.length > 0) return
+    const { error } = await supabase.rpc('insert_project_with_goods', {
+      p_project: built.project,
+      p_goods: built.goodsLines,
+    })
+    if (error) throw error
+  }
   const overdueInvoices = invoices.filter(i => {
     if (i.status === 'paid' || i.status === 'cancelled') return false
     return !!i.dueDate && (i.dueDate.slice(0, 10) < todayStr)
@@ -163,13 +196,16 @@ export function FinanceModule() {
     }
   }
 
-  // Received PO → auto-create an Invoice (default status "draft").
+  // Received PO → auto-create an Invoice (default status "draft"). A PO that
+  // is SUPPLY + Accepted → auto-create its Project (whichever changed last).
   const changePoStatus = async (po: PurchaseOrder, status: string) => {
     if (status === po.status || statusBusy === po.id) return
     setStatusBusy(po.id)
     try {
       setActionError(null)
       await updatePo(po.id!, { status: status as PurchaseOrder['status'] })
+      // Reuse the freshly-updated record so the trigger sees the new status.
+      await maybeCreateProjectFromPo({ ...po, status: status as PurchaseOrder['status'] })
       if (status === 'received' && !hasAutoDoc(invoices, po.number)) {
         const due = new Date()
         due.setDate(due.getDate() + 30)
@@ -587,6 +623,7 @@ export function FinanceModule() {
                 { l: 'Order Date',         v: selPo.orderDate ?? '—' },
                 { l: 'Expected Delivery',  v: selPo.expectedDelivery ?? '—' },
                 { l: 'Project',            v: selPo.projectId ?? '—' },
+                { l: 'Delivery Type',      v: selPo.deliveryType ?? '—' },
               ].map(item => (
                 <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
                   <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{item.l}</p>

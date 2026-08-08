@@ -239,7 +239,8 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   purchase_orders: [
     { key: 'number', label: 'Number', type: 'text', required: true, placeholder: 'PO-2026-001' },
     { key: 'vendorName', label: 'Vendor', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { vendorId: 'id' } } },
-    { key: 'status', label: 'Status', type: 'select', options: ['draft', 'approved', 'sent', 'partial', 'received', 'cancelled'] },
+    { key: 'deliveryType', label: 'Delivery Type', type: 'select', options: ['ASP', 'SUPPLY'] },
+    { key: 'status', label: 'Status', type: 'select', options: ['draft', 'approved', 'sent', 'partial', 'accepted', 'received', 'cancelled'] },
     { key: 'items', label: 'Line Items', type: 'lineItems' },
     { key: 'subtotal', label: 'Subtotal (Ar)', type: 'number' },
     { key: 'tax', label: 'Tax (Ar)', type: 'number' },

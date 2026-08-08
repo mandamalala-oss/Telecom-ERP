@@ -268,7 +268,10 @@ export interface StockMovement {
 // ─── FINANCE ────────────────────────────────────────────────────────────────
 export type QuoteStatus = 'draft' | 'sent' | 'accepted' | 'rejected' | 'expired';
 export type InvoiceStatus = 'draft' | 'sent' | 'partially_paid' | 'paid' | 'overdue' | 'cancelled';
-export type POStatus = 'draft' | 'approved' | 'sent' | 'partial' | 'received' | 'cancelled';
+export type POStatus = 'draft' | 'approved' | 'sent' | 'partial' | 'accepted' | 'received' | 'cancelled';
+
+/** Delivery channel on a PO — ASP (telecom services) vs SUPPLY (goods). */
+export type DeliveryType = 'ASP' | 'SUPPLY';
 
 export interface LineItem {
   id: string;
@@ -322,6 +325,10 @@ export interface PurchaseOrder {
   vendorId: string;
   vendorName: string;
   projectId?: string;
+  /** Source Quote this PO was created from (set by the quote-accepted automation). */
+  quoteId?: string;
+  /** ASP = service PO, SUPPLY = goods PO (drives the auto-project trigger). */
+  deliveryType?: DeliveryType;
   status: POStatus;
   items: LineItem[];
   subtotal: number;

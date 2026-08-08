@@ -280,7 +280,10 @@ create table purchase_orders (
   vendor_id         uuid,
   vendor_name       text,
   project_id        uuid,
-  status            text not null default 'draft' check (status in ('draft','approved','sent','partial','received','cancelled')),
+  -- Supply/trading line (migration 020): delivery type + source quote link.
+  quote_id          uuid references quotes(id) on delete set null,
+  delivery_type     text check (delivery_type in ('ASP','SUPPLY')),
+  status            text not null default 'draft' check (status in ('draft','approved','sent','partial','accepted','received','cancelled')),
   items             jsonb default '[]',
   subtotal          bigint default 0,
   tax               bigint default 0,
