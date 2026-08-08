@@ -594,7 +594,14 @@ export function ProjectsModule() {
                             ? <Badge variant="orange">📦 Supply</Badge>
                             : <Badge variant="blue">📡 Telecom</Badge>}
                           {!supply && (
-                            <span className="text-xs font-mono text-slate-400">{sites.length > 0 ? sites.map(s => s.siteId).join(', ') : '—'}</span>
+                            <>
+                              <span className="text-xs font-mono text-slate-400">{sites.length > 0 ? sites.map(s => s.siteId).join(', ') : '—'}</span>
+                              {p.scopeBuildType && p.scopeTechnology && (
+                                <span className="text-xs font-semibold rounded-full bg-slate-100 dark:bg-slate-700 px-2 py-0.5 text-slate-600 dark:text-slate-300">
+                                  SOW: {p.scopeBuildType}-{p.scopeTechnology}
+                                </span>
+                              )}
+                            </>
                           )}
                         </div>
                         <p className="text-sm text-slate-500 mt-0.5">{p.customerName}{p.region ? ` · ${p.region}` : ''}</p>
