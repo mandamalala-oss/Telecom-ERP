@@ -117,6 +117,8 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 **Tests:** `financeWorkflows.test.ts` covers delivery-type inheritance (quote→PO→invoice→payment) and both project paths (SUPPLY+received → supply/trading w/ goods lines; ASP+received → telecom_service; no delivery type / not received → nothing) → **184/184**, `tsc` clean, build green.
 
+**Bugfix (migration 022):** `insert_project_with_goods` originally cast `jsonb → text[]` for the `team` column, which doesn't exist in Postgres — plpgsql only fails at first execution, so the PO-received trigger died with "cannot cast type jsonb to text[]" and blocked BOTH the auto-Invoice and the auto-Project. Fixed with `jsonb_array_elements_text`; `changePoStatus` also now creates the Invoice BEFORE the Project so one failure can never block the other. **Run 021 + 022 on the live DB** (021 adds `delivery_type` to quotes/invoices/payments — required for the inherited field to save).
+
 **Assumptions:** "PO status = Accepted" from the original `auto-project.md` was superseded by the user's explicit trigger on **PO received**; `accepted` remains a legal PO status (harmless); project name = PO number; no contact field added to POs/Quotes ("if any" branch → blank); no unique index on `po_reference` (app-level idempotency check only, matching `hasAutoDoc` style).
 
 ---

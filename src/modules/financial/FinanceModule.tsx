@@ -197,23 +197,24 @@ export function FinanceModule() {
     }
   }
 
-  // Received PO → auto-create an Invoice (default status "draft"). A received
-  // PO with a delivery type also auto-creates its Project (SUPPLY → supply/
-  // trading, ASP → telecom_service) — whichever field changed last.
+  // Received PO → auto-create an Invoice (default status "draft") and a
+  // Project (SUPPLY → supply/trading, ASP → telecom_service) — whichever
+  // field changed last. The invoice is created FIRST so a project failure can
+  // never block it (and vice-versa errors surface independently).
   const changePoStatus = async (po: PurchaseOrder, status: string) => {
     if (status === po.status || statusBusy === po.id) return
     setStatusBusy(po.id)
     try {
       setActionError(null)
       await updatePo(po.id!, { status: status as PurchaseOrder['status'] })
-      // Reuse the freshly-updated record so the trigger sees the new status.
-      await maybeCreateProjectFromPo({ ...po, status: status as PurchaseOrder['status'] })
       if (status === 'received' && !hasAutoDoc(invoices, po.number)) {
         const due = new Date()
         due.setDate(due.getDate() + 30)
         const dueStr = `${due.getFullYear()}-${String(due.getMonth() + 1).padStart(2, '0')}-${String(due.getDate()).padStart(2, '0')}`
         await createInvoice(invoiceFromReceivedPo(po, nextNumberFor('INV', invoices, todayStr), todayStr, dueStr))
       }
+      // Reuse the freshly-updated record so the trigger sees the new status.
+      await maybeCreateProjectFromPo({ ...po, status: status as PurchaseOrder['status'] })
     } catch (e: any) {
       setActionError(e.message ?? String(e))
     } finally {

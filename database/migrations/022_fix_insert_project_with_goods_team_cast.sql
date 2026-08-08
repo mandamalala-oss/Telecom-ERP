@@ -1,30 +1,9 @@
--- 020: auto-create a supply/trading Project from a SUPPLY PO marked Accepted.
---
--- Adds to purchase_orders:
---   - delivery_type ('ASP' | 'SUPPLY', nullable, no default — set per PO)
---   - quote_id (real link to the Quote the PO came from, set by the
---     quote-accepted automation; also matched by number in notes as fallback)
---   - status 'accepted' added to the status CHECK (was draft/approved/sent/
---     partial/received/cancelled)
---
--- Adds insert_project_with_goods(jsonb, jsonb): inserts a Project row + its
--- project_supply_items rows in ONE transaction and returns the new Project as
--- jsonb. The client builds the payload (financeWorkflows.projectFromSupplyPo)
--- and calls it via supabase.rpc so the two inserts cannot half-complete.
--- Default security invoker: the caller's RLS still applies (projects_write
--- requires a write-capable role, matching the UI grants).
---
--- All idempotent; safe on the live DB.
-
-alter table public.purchase_orders add column if not exists delivery_type text
-  check (delivery_type in ('ASP','SUPPLY'));
-
-alter table public.purchase_orders add column if not exists quote_id uuid
-  references public.quotes(id) on delete set null;
-
-alter table public.purchase_orders drop constraint if exists purchase_orders_status_check;
-alter table public.purchase_orders add constraint purchase_orders_status_check
-  check (status in ('draft','approved','sent','partial','accepted','received','cancelled'));
+-- 022: fix insert_project_with_goods — `jsonb -> 'team'::text[]` cast does not
+-- exist in Postgres and only fails at first execution (plpgsql resolves casts
+-- lazily), so the PO-received auto-Project AND the auto-Invoice were both
+-- blocked by "cannot cast type jsonb to text[]". Recreate the function with
+-- jsonb_array_elements_text for the team array. Idempotent; safe on the live
+-- DB (run after 020).
 
 create or replace function public.insert_project_with_goods(
   p_project jsonb,
