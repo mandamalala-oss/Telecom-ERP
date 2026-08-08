@@ -241,6 +241,9 @@ create table quotes (
   customer_id  uuid,
   customer_name text,
   project_id   uuid,
+  -- Delivery channel chosen on the Quote ('ASP' | 'SUPPLY') — flows down to
+  -- PO → Invoice → Payment (migration 021).
+  delivery_type text check (delivery_type in ('ASP','SUPPLY')),
   status       text not null default 'draft' check (status in ('draft','sent','accepted','rejected','expired')),
   items        jsonb default '[]',
   subtotal     bigint default 0,
@@ -259,6 +262,8 @@ create table invoices (
   customer_name text,
   project_id    uuid,
   quote_id      uuid,
+  -- Inherited from the PO at creation (migration 021).
+  delivery_type text check (delivery_type in ('ASP','SUPPLY')),
   status        text not null default 'draft' check (status in ('draft','sent','partially_paid','paid','overdue','cancelled')),
   items         jsonb default '[]',
   subtotal      bigint default 0,
@@ -299,6 +304,8 @@ create table payments (
   invoice_id     uuid references invoices(id) on delete cascade,
   invoice_number text,
   customer_name  text,
+  -- Inherited from the invoice at creation (migration 021).
+  delivery_type  text check (delivery_type in ('ASP','SUPPLY')),
   amount         bigint not null,
   date           date default current_date,
   method         text not null check (method in ('bank_transfer','mobile_money','check','cash')),

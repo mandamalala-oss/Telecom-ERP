@@ -288,6 +288,8 @@ export interface Quote {
   customerId: string;
   customerName: string;
   projectId?: string;
+  /** ASP = service, SUPPLY = goods — chosen here, flows down to PO/Invoice/Payment. */
+  deliveryType?: DeliveryType;
   status: QuoteStatus;
   items: LineItem[];
   subtotal: number;
@@ -306,6 +308,8 @@ export interface Invoice {
   customerName: string;
   projectId?: string;
   quoteId?: string;
+  /** Inherited from the source PO. */
+  deliveryType?: DeliveryType;
   status: InvoiceStatus;
   items: LineItem[];
   subtotal: number;
@@ -344,6 +348,8 @@ export interface Payment {
   invoiceId: string;
   invoiceNumber: string;
   customerName: string;
+  /** Inherited from the source invoice. */
+  deliveryType?: DeliveryType;
   amount: number;
   date: string;
   method: 'bank_transfer' | 'mobile_money' | 'check' | 'cash';

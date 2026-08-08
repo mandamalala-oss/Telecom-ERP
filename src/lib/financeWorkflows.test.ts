@@ -1,8 +1,8 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { autoPaymentForPaid, poFromAcceptedQuote, invoiceFromReceivedPo, remainingOnInvoice, isAutoPayment, nextNumberFor, hasAutoDoc, addDays, quotesLinkedToPo, projectFromSupplyPo } from './financeWorkflows'
+import { autoPaymentForPaid, poFromAcceptedQuote, invoiceFromReceivedPo, remainingOnInvoice, isAutoPayment, nextNumberFor, hasAutoDoc, addDays, quotesLinkedToPo, projectFromReceivedPo } from './financeWorkflows'
 
-const invoice = { id: 'inv1', number: 'INV-001', customerName: 'ACME', total: 1000 }
+const invoice = { id: 'inv1', number: 'INV-001', customerName: 'ACME', total: 1000, deliveryType: 'SUPPLY' as const }
 
 const quote = {
   id: 'q1',
@@ -10,6 +10,7 @@ const quote = {
   customerId: 'c1',
   customerName: 'ACME',
   projectId: 'p1',
+  deliveryType: 'SUPPLY' as const,
   items: [{ id: 'i1', description: 'Cable', quantity: 2, unit: 'm', unitPrice: 500, total: 1000 }],
   subtotal: 1000,
   tax: 50,
@@ -21,6 +22,7 @@ const po = {
   vendorId: 'v1',
   vendorName: 'VendorCo',
   projectId: 'p1',
+  deliveryType: 'SUPPLY' as const,
   items: [{ id: 'i1', description: 'Tower', quantity: 1, unit: 'u', unitPrice: 9000, total: 9000 }],
   subtotal: 9000,
   tax: 0,
@@ -34,6 +36,7 @@ describe('financeWorkflows — invoice marked paid', () => {
     expect(pay!.amount).toBe(1000)
     expect(pay!.invoiceId).toBe('inv1')
     expect(pay!.invoiceNumber).toBe('INV-001')
+    expect(pay!.deliveryType).toBe('SUPPLY')
     expect(pay!.method).toBe('bank_transfer')
     expect(pay!.reference).toContain('INV-001')
   })
@@ -65,6 +68,7 @@ describe('financeWorkflows — accepted quote → PO', () => {
     expect(out.number).toBe('PO-2026-0001')
     expect(out.orderDate).toBe('2026-08-05')
     expect(out.quoteId).toBe('q1')
+    expect(out.deliveryType).toBe('SUPPLY')
     expect(out.notes).toContain('QT-001')
     // expected_delivery must be omitted, not an empty string (date column).
     expect('expectedDelivery' in out).toBe(false)
@@ -81,6 +85,7 @@ describe('financeWorkflows — received PO → invoice', () => {
     expect(out.paid).toBe(0)
     expect(out.issueDate).toBe('2026-08-05')
     expect(out.dueDate).toBe('2026-09-04')
+    expect(out.deliveryType).toBe('SUPPLY')
     expect(out.taxRate).toBe(0)
     expect(out.notes).toContain('PO-001')
   })
@@ -152,7 +157,7 @@ describe('financeWorkflows — quotesLinkedToPo', () => {
   })
 })
 
-describe('financeWorkflows — SUPPLY + Accepted PO → auto Project', () => {
+describe('financeWorkflows — received PO → auto Project (SUPPLY vs ASP)', () => {
   const supplyPo = {
     number: 'PO-2026-0001',
     vendorId: 'c1',
@@ -160,20 +165,12 @@ describe('financeWorkflows — SUPPLY + Accepted PO → auto Project', () => {
     quoteId: 'q1',
     notes: 'Auto-created from accepted quote QT-001',
     deliveryType: 'SUPPLY' as const,
-    status: 'accepted' as const,
+    status: 'received' as const,
+    total: 1050,
   }
 
-  it('acceptance #1 — ASP + Accepted never creates a project', () => {
-    expect(projectFromSupplyPo({ ...supplyPo, deliveryType: 'ASP' }, [quote], '2026-08-05')).toBeNull()
-  })
-
-  it('acceptance #2 — SUPPLY but not Accepted never creates a project', () => {
-    expect(projectFromSupplyPo({ ...supplyPo, status: 'sent' }, [quote], '2026-08-05')).toBeNull()
-    expect(projectFromSupplyPo({ ...supplyPo, deliveryType: undefined, status: 'accepted' }, [quote], '2026-08-05')).toBeNull()
-  })
-
-  it('acceptance #3 — SUPPLY + Accepted creates exactly one correctly-mapped project', () => {
-    const out = projectFromSupplyPo(supplyPo, [quote], '2026-08-05')
+  it('SUPPLY + received → a correctly-mapped supply/trading project', () => {
+    const out = projectFromReceivedPo(supplyPo, [quote], '2026-08-05')
     expect(out).not.toBeNull()
     const { project, goodsLines } = out!
     // Customer comes from the source PO (whose vendor IS the client here).
@@ -181,7 +178,7 @@ describe('financeWorkflows — SUPPLY + Accepted PO → auto Project', () => {
     expect(project.customerName).toBe('ACME')
     expect(project.poReference).toBe('PO-2026-0001')
     expect(project.name).toBe('PO-2026-0001')
-    // Dates: acceptance date, +30d end, +15d delivery.
+    // Dates: received date, +30d end, +15d delivery.
     expect(project.startDate).toBe('2026-08-05')
     expect(project.endDate).toBe('2026-09-04')
     expect(project.deliveryDeadline).toBe('2026-08-20')
@@ -203,23 +200,46 @@ describe('financeWorkflows — SUPPLY + Accepted PO → auto Project', () => {
     expect(goodsLines[0].code).toBe('1')
   })
 
+  it('ASP + received → a telecom_service project with no goods lines', () => {
+    const out = projectFromReceivedPo({ ...supplyPo, deliveryType: 'ASP', total: 9000 }, [quote], '2026-08-05')
+    expect(out).not.toBeNull()
+    const { project, goodsLines } = out!
+    expect(project.projectType).toBe('telecom_service')
+    expect(project.customerId).toBe('c1')
+    expect(project.poReference).toBe('PO-2026-0001')
+    expect(project.startDate).toBe('2026-08-05')
+    expect(project.endDate).toBe('2026-09-04')
+    expect(project.revenue).toBe(9000) // PO total, not quote selling
+    expect(project.deliveryStatus).toBeUndefined()
+    expect(goodsLines).toEqual([])
+  })
+
+  it('received PO with NO delivery type never creates a project', () => {
+    expect(projectFromReceivedPo({ ...supplyPo, deliveryType: undefined }, [quote], '2026-08-05')).toBeNull()
+  })
+
+  it('SUPPLY but NOT received never creates a project', () => {
+    expect(projectFromReceivedPo({ ...supplyPo, status: 'sent' }, [quote], '2026-08-05')).toBeNull()
+    expect(projectFromReceivedPo({ ...supplyPo, status: 'accepted' }, [quote], '2026-08-05')).toBeNull()
+  })
+
   it('pulls goods lines from every quote linked to the PO', () => {
     const q2 = { ...quote, id: 'q2', number: 'QT-002', items: [{ id: 'i2', description: 'Router', quantity: 1, unit: 'u', unitPrice: 900, total: 900 }] }
-    const out = projectFromSupplyPo({ ...supplyPo, quoteId: undefined, notes: 'Auto-created from accepted quote QT-001 and QT-002' }, [quote, q2], '2026-08-05')
+    const out = projectFromReceivedPo({ ...supplyPo, quoteId: undefined, notes: 'Auto-created from accepted quote QT-001 and QT-002' }, [quote, q2], '2026-08-05')
     expect(out!.goodsLines).toHaveLength(2)
     expect(out!.project.revenue).toBe(1900)
     expect(out!.goodsLines[1].code).toBe('2')
   })
 
-  it('still creates the project when no quote is linked — without goods lines', () => {
-    const out = projectFromSupplyPo({ ...supplyPo, quoteId: undefined, notes: 'Manual PO' }, [quote], '2026-08-05')
+  it('still creates the SUPPLY project when no quote is linked — without goods lines', () => {
+    const out = projectFromReceivedPo({ ...supplyPo, quoteId: undefined, notes: 'Manual PO' }, [quote], '2026-08-05')
     expect(out).not.toBeNull()
     expect(out!.goodsLines).toEqual([])
     expect(out!.project.revenue).toBe(0)
   })
 
-  it('omits date fields entirely when no acceptance date is available', () => {
-    const out = projectFromSupplyPo(supplyPo, [quote], '')
+  it('omits date fields entirely when no received date is available', () => {
+    const out = projectFromReceivedPo(supplyPo, [quote], '')
     expect(out!.project.startDate).toBeUndefined()
     expect(out!.project.endDate).toBeUndefined()
     expect(out!.project.deliveryDeadline).toBeUndefined()

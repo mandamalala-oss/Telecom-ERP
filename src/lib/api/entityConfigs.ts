@@ -213,6 +213,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   quotes: [
     { key: 'number', label: 'Number', type: 'text', required: true, placeholder: 'QT-2026-001' },
     { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { customerId: 'id' } } },
+    { key: 'deliveryType', label: 'Delivery Type', type: 'select', options: ['ASP', 'SUPPLY'] },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'sent', 'accepted', 'rejected', 'expired'] },
     { key: 'items', label: 'Line Items', type: 'lineItems' },
     { key: 'subtotal', label: 'Subtotal (Ar)', type: 'number' },
@@ -239,7 +240,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   purchase_orders: [
     { key: 'number', label: 'Number', type: 'text', required: true, placeholder: 'PO-2026-001' },
     { key: 'vendorName', label: 'Vendor', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { vendorId: 'id' } } },
-    { key: 'deliveryType', label: 'Delivery Type', type: 'select', options: ['ASP', 'SUPPLY'] },
+    // delivery_type is NOT editable here — it follows the source Quote.
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'approved', 'sent', 'partial', 'accepted', 'received', 'cancelled'] },
     { key: 'items', label: 'Line Items', type: 'lineItems' },
     { key: 'subtotal', label: 'Subtotal (Ar)', type: 'number' },

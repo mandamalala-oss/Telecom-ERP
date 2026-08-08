@@ -8,11 +8,13 @@ import type { Quote, Invoice, PurchaseOrder, Payment, SupplyItem, Project, Regio
  * be told apart from manual payments (e.g. when an invoice leaves 'paid'). */
 export const AUTO_PAYMENT_PREFIX = 'Auto —'
 
-/** True when a SUPPLY PO is Accepted — the auto-project trigger condition.
- * Evaluated on the full record so it fires regardless of whether the
- * delivery_type or the status was the last field to change. */
+/** True when a received PO carries a delivery type — the auto-project trigger
+ * condition. Fires on PO status = received for BOTH delivery types (the
+ * builder picks the project business line): SUPPLY → supply/trading,
+ * ASP → telecom_service. Evaluated on the full record so it fires regardless
+ * of which field changed last. */
 export function shouldAutoCreateProject(po: Pick<PurchaseOrder, 'deliveryType' | 'status'>): boolean {
-  return po.deliveryType === 'SUPPLY' && po.status === 'accepted'
+  return po.status === 'received' && (po.deliveryType === 'SUPPLY' || po.deliveryType === 'ASP')
 }
 
 /** YYYY-MM-DD + N calendar days (local-time, DST-safe, no UTC drift). */
@@ -41,37 +43,45 @@ export function quotesLinkedToPo(po: Pick<PurchaseOrder, 'quoteId' | 'notes'>, q
 }
 
 /**
- * SUPPLY + Accepted PO → the Project to auto-create (payload for
+ * Received PO → the Project to auto-create (payload for
  * insert_project_with_goods) + its goods lines, or null when the trigger
- * condition isn't met. Goods lines are pulled from every Quote linked to the
- * PO (quote_id or notes); a PO with no linked Quote still yields a Project,
- * just without goods lines. purchase_price is left 0 (manual, like the
- * SupplyProjectModal "From Quote" pre-fill), so budget/spent = 0 and
- * revenue = total selling; the trading margin shows once purchase costs are
- * filled in.
+ * condition isn't met.
+ *
+ * SUPPLY → a supply/trading project, mapped per auto-project.md: customer
+ * from the PO (its vendor IS the client in this ERP), PO reference, start =
+ * received date, end = +30d, delivery deadline = +15d, delivery status
+ * pending, goods lines from every Quote linked to the PO (quote_id or notes;
+ * a PO with no linked Quote still yields a Project, just without goods
+ * lines). purchase_price is left 0 (manual, like the SupplyProjectModal
+ * "From Quote" pre-fill), so budget/spent = 0 and revenue = total selling.
+ *
+ * ASP → a telecom_service project (no goods lines, no delivery fields): same
+ * customer/PO reference/dates, revenue = the PO total.
  */
-export function projectFromSupplyPo(
-  po: Pick<PurchaseOrder, 'number' | 'vendorId' | 'vendorName' | 'quoteId' | 'notes' | 'deliveryType' | 'status'>,
+export function projectFromReceivedPo(
+  po: Pick<PurchaseOrder, 'number' | 'vendorId' | 'vendorName' | 'quoteId' | 'notes' | 'deliveryType' | 'status' | 'total'>,
   quotes: Array<Pick<Quote, 'id' | 'number' | 'items'>>,
-  acceptedDate: string
+  receivedDate: string
 ): { project: Partial<Project>; goodsLines: SupplyItem[] } | null {
   if (!shouldAutoCreateProject(po)) return null
 
   let sellingTotal = 0
   const goodsLines: SupplyItem[] = []
-  for (const q of quotesLinkedToPo(po, quotes)) {
-    for (const it of q.items ?? []) {
-      const qty = Number(it.quantity) || 0
-      const selling = Number(it.unitPrice) || 0
-      sellingTotal += qty * selling
-      goodsLines.push({
-        code: String(goodsLines.length + 1),
-        description: String(it.description ?? '').trim(),
-        unit: String(it.unit ?? '').trim() || 'U',
-        qty,
-        purchasePrice: 0,
-        sellingPrice: selling,
-      })
+  if (po.deliveryType === 'SUPPLY') {
+    for (const q of quotesLinkedToPo(po, quotes)) {
+      for (const it of q.items ?? []) {
+        const qty = Number(it.quantity) || 0
+        const selling = Number(it.unitPrice) || 0
+        sellingTotal += qty * selling
+        goodsLines.push({
+          code: String(goodsLines.length + 1),
+          description: String(it.description ?? '').trim(),
+          unit: String(it.unit ?? '').trim() || 'U',
+          qty,
+          purchasePrice: 0,
+          sellingPrice: selling,
+        })
+      }
     }
   }
 
@@ -86,20 +96,25 @@ export function projectFromSupplyPo(
     phases: [],
     progress: 0,
     region: '' as Region,
-    projectType: 'supply_trading',
-    customerContact: '', // no contact recorded on POs/Quotes — left blank
-    deliveryStatus: 'pending',
     poReference: po.number,
     notes: `Auto-created from PO ${po.number}`,
     budget: 0,
     spent: 0,
-    revenue: Math.round(sellingTotal),
   }
-  // Date columns reject '' — only set when a real acceptance date exists.
-  if (acceptedDate) {
-    project.startDate = acceptedDate
-    project.endDate = addDays(acceptedDate, 30)
-    project.deliveryDeadline = addDays(acceptedDate, 15)
+  if (po.deliveryType === 'SUPPLY') {
+    project.projectType = 'supply_trading'
+    project.customerContact = '' // no contact recorded on POs/Quotes — left blank
+    project.deliveryStatus = 'pending'
+    project.revenue = Math.round(sellingTotal)
+  } else {
+    project.projectType = 'telecom_service'
+    project.revenue = Math.round(po.total ?? 0)
+  }
+  // Date columns reject '' — only set when a real received date exists.
+  if (receivedDate) {
+    project.startDate = receivedDate
+    project.endDate = addDays(receivedDate, 30)
+    if (po.deliveryType === 'SUPPLY') project.deliveryDeadline = addDays(receivedDate, 15)
   }
   return { project, goodsLines }
 }
@@ -143,7 +158,7 @@ export function remainingOnInvoice(inv: Pick<Invoice, 'total'>, recordedPayments
  * (so payments + paid always reconcile to total). Null when nothing is due.
  */
 export function autoPaymentForPaid(
-  inv: Pick<Invoice, 'id' | 'number' | 'customerName' | 'total'>,
+  inv: Pick<Invoice, 'id' | 'number' | 'customerName' | 'total' | 'deliveryType'>,
   recordedPayments: number,
   date: string
 ): Omit<Payment, 'id'> | null {
@@ -153,6 +168,7 @@ export function autoPaymentForPaid(
     invoiceId: inv.id,
     invoiceNumber: inv.number,
     customerName: inv.customerName,
+    deliveryType: inv.deliveryType,
     amount,
     date,
     method: 'bank_transfer',
@@ -168,7 +184,7 @@ export function autoPaymentForPaid(
  * Postgres rejects '' for a date column).
  */
 export function poFromAcceptedQuote(
-  q: Pick<Quote, 'id' | 'number' | 'customerId' | 'customerName' | 'projectId' | 'items' | 'subtotal' | 'tax' | 'total'>,
+  q: Pick<Quote, 'id' | 'number' | 'customerId' | 'customerName' | 'projectId' | 'items' | 'subtotal' | 'tax' | 'total' | 'deliveryType'>,
   number: string,
   orderDate: string
 ): Omit<PurchaseOrder, 'id' | 'expectedDelivery'> {
@@ -178,6 +194,7 @@ export function poFromAcceptedQuote(
     vendorName: q.customerName,
     projectId: q.projectId,
     quoteId: q.id,
+    deliveryType: q.deliveryType,
     status: 'sent',
     items: (q.items ?? []).map((i) => ({ ...i })),
     subtotal: q.subtotal ?? 0,
@@ -193,7 +210,7 @@ export function poFromAcceptedQuote(
  * The PO's vendor maps onto the invoice's customer.
  */
 export function invoiceFromReceivedPo(
-  po: Pick<PurchaseOrder, 'number' | 'vendorId' | 'vendorName' | 'projectId' | 'items' | 'subtotal' | 'tax' | 'total'>,
+  po: Pick<PurchaseOrder, 'number' | 'vendorId' | 'vendorName' | 'projectId' | 'items' | 'subtotal' | 'tax' | 'total' | 'deliveryType'>,
   number: string,
   issueDate: string,
   dueDate: string
@@ -203,6 +220,7 @@ export function invoiceFromReceivedPo(
     customerId: po.vendorId,
     customerName: po.vendorName,
     projectId: po.projectId,
+    deliveryType: po.deliveryType,
     status: 'draft',
     items: (po.items ?? []).map((i) => ({ ...i })),
     subtotal: po.subtotal ?? 0,

@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { TABLES } from '@/lib/api/entityConfigs'
 import { resolvePaidOnStatusChange } from '@/lib/invoiceStatus'
-import { autoPaymentForPaid, poFromAcceptedQuote, invoiceFromReceivedPo, isAutoPayment, nextNumberFor, hasAutoDoc, projectFromSupplyPo } from '@/lib/financeWorkflows'
+import { autoPaymentForPaid, poFromAcceptedQuote, invoiceFromReceivedPo, isAutoPayment, nextNumberFor, hasAutoDoc, projectFromReceivedPo } from '@/lib/financeWorkflows'
 import { supabase } from '@/lib/supabase'
 import type { Quote, Invoice, PurchaseOrder, Payment } from '@/types'
 
@@ -78,14 +78,15 @@ export function FinanceModule() {
   const today = new Date()
   const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
 
-  // SUPPLY + Accepted PO → auto-create exactly one supply/trading Project.
-  // Idempotent: the Project stores the triggering PO's number in po_reference,
-  // and we re-check that link in the DB before inserting (so re-saving the PO
-  // can never duplicate — a fresh read also covers projects created in other
-  // sessions). Project row + goods lines go through insert_project_with_goods,
-  // which commits both in a single transaction.
+  // Received PO carrying a delivery type → auto-create exactly one Project:
+  // SUPPLY → supply/trading, ASP → telecom_service. Idempotent: the Project
+  // stores the triggering PO's number in po_reference, and we re-check that
+  // link in the DB before inserting (so re-saving the PO can never duplicate —
+  // a fresh read also covers projects created in other sessions). Project row
+  // + goods lines go through insert_project_with_goods, which commits both in
+  // a single transaction.
   const maybeCreateProjectFromPo = async (po: PurchaseOrder) => {
-    const built = projectFromSupplyPo(po, quotes, todayStr)
+    const built = projectFromReceivedPo(po, quotes, todayStr)
     if (!built) return
     const { data: existing } = await supabase
       .from('projects')
@@ -196,8 +197,9 @@ export function FinanceModule() {
     }
   }
 
-  // Received PO → auto-create an Invoice (default status "draft"). A PO that
-  // is SUPPLY + Accepted → auto-create its Project (whichever changed last).
+  // Received PO → auto-create an Invoice (default status "draft"). A received
+  // PO with a delivery type also auto-creates its Project (SUPPLY → supply/
+  // trading, ASP → telecom_service) — whichever field changed last.
   const changePoStatus = async (po: PurchaseOrder, status: string) => {
     if (status === po.status || statusBusy === po.id) return
     setStatusBusy(po.id)
@@ -516,6 +518,7 @@ export function FinanceModule() {
                 { l: 'Issue Date',  v: selInv.issueDate },
                 { l: 'Due Date',    v: selInv.dueDate },
                 { l: 'Tax Rate',    v: `${selInv.taxRate}%` },
+                { l: 'Delivery Type', v: selInv.deliveryType ?? '—' },
                 { l: 'Project',     v: selInv.projectId ?? '—' },
               ].map(item => (
                 <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
@@ -569,9 +572,10 @@ export function FinanceModule() {
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {[
-                { l: 'Valid Until', v: selQuo.validUntil ?? '—' },
-                { l: 'Tax Rate',    v: `${selQuo.taxRate}%` },
-                { l: 'Project',     v: selQuo.projectId ?? '—' },
+                { l: 'Valid Until',   v: selQuo.validUntil ?? '—' },
+                { l: 'Tax Rate',      v: `${selQuo.taxRate}%` },
+                { l: 'Delivery Type', v: selQuo.deliveryType ?? '—' },
+                { l: 'Project',       v: selQuo.projectId ?? '—' },
               ].map(item => (
                 <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
                   <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{item.l}</p>
@@ -671,10 +675,11 @@ export function FinanceModule() {
             </div>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {[
-                { l: 'Date',      v: selPay.date ?? '—' },
-                { l: 'Invoice',   v: selPay.invoiceNumber ?? '—' },
-                { l: 'Method',    v: selPay.method?.replace('_',' ') ?? '—' },
-                { l: 'Reference', v: selPay.reference ?? '—' },
+                { l: 'Date',          v: selPay.date ?? '—' },
+                { l: 'Invoice',       v: selPay.invoiceNumber ?? '—' },
+                { l: 'Method',        v: selPay.method?.replace('_',' ') ?? '—' },
+                { l: 'Delivery Type', v: selPay.deliveryType ?? '—' },
+                { l: 'Reference',     v: selPay.reference ?? '—' },
               ].map(item => (
                 <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
                   <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{item.l}</p>
