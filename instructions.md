@@ -138,6 +138,8 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 **Assumptions**: multi-select stored as `text[]` array columns (not join table / booleans); field names keep the SOW's `scope_*` snake_case → camelCase app shape (`scopeBuildType`, `scopeNsbRanItems`, …); dish-size options exactly as listed; Build Type + Technology are the first two controls of the section (heading "Scope of Work" rendered above Build Type).
 
+**Follow-up**: dish-size fields render as **click-to-select chips** (`FieldConfig.chips`, no native dropdown — one click, no press-and-hold); the **Region list** was replaced repo-wide with the 22 Madagascar regions (`Antsiranana, Diana, Sava, Analanjirofo, Sofia, Boeny, Melaky, Betsiboka, Alaotra-Mangoro, Analamanga, Vakinankaratra, Bongolava, Itasy, Atsimo-Atsinanana, Atsinanana, Vatovavy-Fitovinany, Amoron’i Mania, Haute Matsiatra, Ihorombe, Androy, Anosy, Menabe`) in `types/index.ts` (`Region`) and `entityConfigs.ts` (`REGIONS`).
+
 ---
 
 ## 🔒 Git / environment notes (IMPORTANT for future sessions)

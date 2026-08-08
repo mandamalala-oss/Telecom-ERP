@@ -43,6 +43,10 @@ export interface FieldConfig {
   placeholder?: string
   /** Turns the field into a reference dropdown backed by another table. */
   lookup?: LookupConfig
+  /** Render a static-option select as click-to-choose chips instead of a
+   * native dropdown (short fixed option lists — avoids the native
+   * press-and-hold behavior of <select>). */
+  chips?: boolean
   /** Only render this field while the predicate holds (conditional sections,
    * e.g. Scope of Work sub-fields gated on the two selectors above them).
    * When it turns false the field's value is dropped from the payload, so
@@ -290,6 +294,29 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                       <option key={row[f.lookup!.valueKey]} value={row[f.lookup!.valueKey]}>{lookupLabel(f, row)}</option>
                     ))}
                   </Select>
+                ) : f.chips ? (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-1.5">{f.label}</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(f.options ?? []).map((o) => {
+                        const active = values[f.key] === o
+                        return (
+                          <button
+                            type="button"
+                            key={o}
+                            onClick={() => set(f.key, active ? '' : o)}
+                            className={`text-xs font-semibold rounded-full border px-3 py-1.5 transition-colors cursor-pointer ${
+                              active
+                                ? 'bg-brand-500 border-brand-500 text-white'
+                                : 'bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-brand-400'
+                            }`}
+                          >
+                            {o.replace(/_/g, ' ')}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </div>
                 ) : (
                   <Select label={f.label} value={values[f.key] ?? ''} onChange={(e) => set(f.key, e.target.value)}>
                     <option value="">Select…</option>

@@ -437,10 +437,10 @@ describe('EntityFormModal — Scope of Work (conditional sections)', () => {
     { key: 'scopeBuildType', label: 'Build Type', type: 'select', options: ['NSB', 'MOD'] },
     { key: 'scopeTechnology', label: 'Technology', type: 'select', options: ['RAN', 'MW'] },
     { key: 'scopeNsbRanItems', label: 'Scope Items', type: 'multiSelect', options: ['ANTENNA', 'RRU', 'FO', 'RACK', 'BASEBAND'], showWhen: (v) => v.scopeBuildType === 'NSB' && v.scopeTechnology === 'RAN' },
-    { key: 'scopeNsbMwDishSize', label: 'Dish Size', type: 'select', options: ['0.3m', '0.6m', '0.9m', '1.2m', '1.8m', '2.4m', '3m'], showWhen: (v) => v.scopeBuildType === 'NSB' && v.scopeTechnology === 'MW' },
+    { key: 'scopeNsbMwDishSize', label: 'Dish Size', type: 'select', chips: true, options: ['0.3m', '0.6m', '0.9m', '1.2m', '1.8m', '2.4m', '3m'], showWhen: (v) => v.scopeBuildType === 'NSB' && v.scopeTechnology === 'MW' },
     { key: 'scopeModRanAddItems', label: 'ADD Items', type: 'multiSelect', options: ['RRU', 'ANTENNA', 'RACK', 'BASEBAND'], showWhen: (v) => v.scopeBuildType === 'MOD' && v.scopeTechnology === 'RAN' },
     { key: 'scopeModRanSwapItems', label: 'SWAP Items', type: 'multiSelect', options: ['RRU', 'ANTENNA', 'RACK', 'BASEBAND'], showWhen: (v) => v.scopeBuildType === 'MOD' && v.scopeTechnology === 'RAN' },
-    { key: 'scopeModMwSwapDishSize', label: 'Dish Size — SWAP', type: 'select', options: ['0.3m', '0.6m', '0.9m', '1.2m', '1.8m', '2.4m', '3m'], showWhen: (v) => v.scopeBuildType === 'MOD' && v.scopeTechnology === 'MW' },
+    { key: 'scopeModMwSwapDishSize', label: 'Dish Size — SWAP', type: 'select', chips: true, options: ['0.3m', '0.6m', '0.9m', '1.2m', '1.8m', '2.4m', '3m'], showWhen: (v) => v.scopeBuildType === 'MOD' && v.scopeTechnology === 'MW' },
   ]
 
   const pick = async (build: string, tech: string) => {
@@ -461,12 +461,17 @@ describe('EntityFormModal — Scope of Work (conditional sections)', () => {
     expect(screen.queryByLabelText('Dish Size')).toBeNull()
   })
 
-  it('acceptance #2 — NSB + MW shows exactly the dish-size dropdown', async () => {
-    renderForm(SCOPE_FIELDS)
+  it('acceptance #2 — NSB + MW shows exactly the dish-size chips (click to choose)', async () => {
+    const onSubmit = renderForm(SCOPE_FIELDS)
     await pick('NSB', 'MW')
-    expect(screen.getByLabelText('Dish Size')).toBeTruthy()
+    expect(screen.getByText('Dish Size')).toBeTruthy()
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
     expect(screen.queryByText('ADD Items')).toBeNull()
+    // Chips: single click selects (no native dropdown / hold-to-select).
+    await userEvent.click(screen.getByRole('button', { name: '0.6m' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ scopeBuildType: 'NSB', scopeTechnology: 'MW', scopeNsbMwDishSize: '0.6m' })
   })
 
   it('acceptance #3 — MOD + RAN shows both ADD and SWAP groups simultaneously', async () => {
@@ -479,10 +484,10 @@ describe('EntityFormModal — Scope of Work (conditional sections)', () => {
     expect(screen.queryByText('Dish Size')).toBeNull()
   })
 
-  it('acceptance #4 — MOD + MW shows exactly the SWAP dish-size dropdown', async () => {
+  it('acceptance #4 — MOD + MW shows exactly the SWAP dish-size chips', async () => {
     renderForm(SCOPE_FIELDS)
     await pick('MOD', 'MW')
-    expect(screen.getByLabelText('Dish Size — SWAP')).toBeTruthy()
+    expect(screen.getByText('Dish Size — SWAP')).toBeTruthy()
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
     expect(screen.queryByText('ADD Items')).toBeNull()
   })

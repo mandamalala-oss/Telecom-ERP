@@ -102,7 +102,11 @@ export interface Contact {
 // ─── SITES ──────────────────────────────────────────────────────────────────
 export type Technology = '2G' | '3G' | '4G' | '4G+' | '5G' | 'MW' | 'VSAT';
 export type SiteStatus = 'planned' | 'survey' | 'installation' | 'integration' | 'atp' | 'acceptance' | 'live' | 'decommissioned';
-export type Region = 'Antananarivo' | 'Fianarantsoa' | 'Toamasina' | 'Mahajanga' | 'Toliara' | 'Antsiranana' | 'Antsirabe' | 'Morondava';
+export type Region =
+  | 'Antsiranana' | 'Diana' | 'Sava' | 'Analanjirofo' | 'Sofia' | 'Boeny' | 'Melaky' | 'Betsiboka'
+  | 'Alaotra-Mangoro' | 'Analamanga' | 'Vakinankaratra' | 'Bongolava' | 'Itasy' | 'Atsimo-Atsinanana'
+  | 'Atsinanana' | 'Vatovavy-Fitovinany' | 'Amoron’i Mania' | 'Haute Matsiatra' | 'Ihorombe'
+  | 'Androy' | 'Anosy' | 'Menabe';
 export type TowerType = 'greenfield' | 'rooftop' | 'mast' | 'shared_tower';
 export type PowerSource = 'grid' | 'generator' | 'solar' | 'hybrid';
 
