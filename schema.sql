@@ -142,6 +142,14 @@ create table projects (
   delivery_status  text default 'pending' check (delivery_status in ('pending','partial','delivered')),
   po_reference     text,
   notes            text,
+  -- Scope of Work for telecom site projects (migration 023):
+  scope_build_type        text check (scope_build_type in ('NSB','MOD')),
+  scope_technology        text check (scope_technology in ('RAN','MW')),
+  scope_nsb_ran_items     text[] default '{}',
+  scope_nsb_mw_dish_size  text,
+  scope_mod_ran_add_items text[] default '{}',
+  scope_mod_ran_swap_items text[] default '{}',
+  scope_mod_mw_swap_dish_size text,
   created_at    timestamptz default now()
 );
 

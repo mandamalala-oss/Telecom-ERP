@@ -74,6 +74,14 @@ export const TABLE_MODULE: Record<string, string> = {
 
 const REGIONS = ['Antananarivo', 'Fianarantsoa', 'Toamasina', 'Mahajanga', 'Toliara', 'Antsiranana', 'Antsirabe', 'Morondava']
 const TECHS = ['2G', '3G', '4G', '4G+', '5G', 'MW', 'VSAT']
+const DISH_SIZES = ['0.3m', '0.6m', '0.9m', '1.2m', '1.8m', '2.4m', '3m']
+const RAN_ITEMS = ['ANTENNA', 'RRU', 'FO', 'RACK', 'BASEBAND']
+const MOD_RAN_ITEMS = ['RRU', 'ANTENNA', 'RACK', 'BASEBAND']
+
+// Scope of Work: sub-fields appear only once BOTH selectors have a value
+// (EntityFormModal hides them via showWhen and prunes stale values on switch).
+const scopeIs = (buildType: string, technology: string) => (v: Record<string, any>) =>
+  v.scopeBuildType === buildType && v.scopeTechnology === technology
 
 export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   leads: [
@@ -147,6 +155,16 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'pm', label: 'Project Manager', type: 'text' },
     { key: 'progress', label: 'Progress %', type: 'number' },
     { key: 'region', label: 'Region', type: 'select', options: REGIONS },
+    // ── Scope of Work (telecom site projects) ────────────────────────────────
+    // Build Type + Technology gate the sub-fields; nothing renders until both
+    // are chosen, and switching either clears the now-irrelevant sub-values.
+    { key: 'scopeBuildType', label: 'Build Type', type: 'select', options: ['NSB', 'MOD'], section: 'Scope of Work' },
+    { key: 'scopeTechnology', label: 'Technology', type: 'select', options: ['RAN', 'MW'] },
+    { key: 'scopeNsbRanItems', label: 'Scope Items', type: 'multiSelect', options: RAN_ITEMS, showWhen: scopeIs('NSB', 'RAN') },
+    { key: 'scopeNsbMwDishSize', label: 'Dish Size', type: 'select', options: DISH_SIZES, showWhen: scopeIs('NSB', 'MW') },
+    { key: 'scopeModRanAddItems', label: 'ADD Items', type: 'multiSelect', options: MOD_RAN_ITEMS, showWhen: scopeIs('MOD', 'RAN') },
+    { key: 'scopeModRanSwapItems', label: 'SWAP Items', type: 'multiSelect', options: MOD_RAN_ITEMS, showWhen: scopeIs('MOD', 'RAN') },
+    { key: 'scopeModMwSwapDishSize', label: 'Dish Size — SWAP', type: 'select', options: DISH_SIZES, showWhen: scopeIs('MOD', 'MW') },
   ],
   // Junction table — internal only (no module in the sidebar). Config exists
   // so the schema↔config invariant holds and lookups can reference it.

@@ -176,11 +176,29 @@ export interface Project {
   deliveryStatus?: DeliveryStatus;
   poReference?: string;
   notes?: string;
+  // ── Scope of Work (telecom site projects, migration 023) ──────────────────
+  /** NSB (New Site Build) | MOD (Modification). */
+  scopeBuildType?: ScopeBuildType;
+  /** RAN | MW. */
+  scopeTechnology?: ScopeTechnology;
+  /** NSB + RAN → checkbox group. */
+  scopeNsbRanItems?: string[];
+  /** NSB + MW → dish size (single). */
+  scopeNsbMwDishSize?: string;
+  /** MOD + RAN → checkbox group (ADD). */
+  scopeModRanAddItems?: string[];
+  /** MOD + RAN → checkbox group (SWAP). */
+  scopeModRanSwapItems?: string[];
+  /** MOD + MW → dish size (SWAP only, single). */
+  scopeModMwSwapDishSize?: string;
 }
 
 /** Discriminates the two project business lines. */
 export type ProjectType = 'telecom_service' | 'supply_trading';
 export type DeliveryStatus = 'pending' | 'partial' | 'delivered';
+/** Scope of Work selectors (telecom site projects). */
+export type ScopeBuildType = 'NSB' | 'MOD';
+export type ScopeTechnology = 'RAN' | 'MW';
 
 /** One goods line of a supply/trading project (project_supply_items). Totals
  * are computed client-side (totalSelling = qty × sellingPrice, etc.). */

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import { Modal } from '@/components/ui/Modal'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
@@ -43,6 +43,13 @@ export interface FieldConfig {
   placeholder?: string
   /** Turns the field into a reference dropdown backed by another table. */
   lookup?: LookupConfig
+  /** Only render this field while the predicate holds (conditional sections,
+   * e.g. Scope of Work sub-fields gated on the two selectors above them).
+   * When it turns false the field's value is dropped from the payload, so
+   * stale sub-selections are never saved. */
+  showWhen?: (values: Record<string, any>) => boolean
+  /** Optional heading rendered above the first field of a form section. */
+  section?: string
 }
 
 interface Props {
@@ -54,6 +61,21 @@ interface Props {
   onSubmit: (values: Record<string, any>) => Promise<void>
   /** Extra lookup rows supplied by the module (e.g. projects/sites/junction) — merged over auto-fetched options. */
   extraLookup?: Record<string, any[]>
+}
+
+// Drop the values of conditional fields whose `showWhen` no longer applies,
+// so switching a selector (e.g. Build Type / Technology) clears the now-
+// irrelevant sub-fields instead of hiding them with stale data underneath.
+// Pure + exported for unit tests.
+export function pruneConditional(fields: FieldConfig[], values: Record<string, any>): Record<string, any> {
+  let out: Record<string, any> | null = null
+  for (const f of fields) {
+    if (f.showWhen && !f.showWhen(values)) {
+      out = out ?? { ...values }
+      delete out[f.key]
+    }
+  }
+  return out ?? values
 }
 
 // One generic, config-driven form used to create/edit records for every
@@ -69,8 +91,10 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   // New always starts blank and a reopened record shows the latest saved
   // values. (The previous key-comparison only reseeded when the record
   // changed, so cancel→reopen of the same create/edit kept stale input.)
+  // pruneConditional also guards against rows whose stored sub-fields
+  // disagree with their selectors (only writable via direct SQL).
   useEffect(() => {
-    if (open) setValues(buildInitial(fields, initial))
+    if (open) setValues(pruneConditional(fields, buildInitial(fields, initial)))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -95,7 +119,12 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
 
   if (!open) return null
 
-  const set = (k: string, v: any) => setValues((prev) => ({ ...prev, [k]: v }))
+  const set = (k: string, v: any) =>
+    setValues((prev) => pruneConditional(fields, { ...prev, [k]: v }))
+
+  // Only fields whose conditional section is active are rendered + validated;
+  // switching a selector prunes the stale sub-field values (see set).
+  const visibleFields = fields.filter((f) => !f.showWhen || f.showWhen(values))
 
   // ── Line items (Designation / Qty / Unit / Unit-price) ─────────────────────
   // Kept in values[f.key] as an array; subtotal/tax/total derive from the rows
@@ -199,8 +228,8 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
     e.preventDefault()
     setError(null)
 
-    // Validate required fields BEFORE touching the DB.
-    const missing = fields.filter(
+    // Validate required fields BEFORE touching the DB (visible ones only).
+    const missing = visibleFields.filter(
       (f) => f.required && (values[f.key] === '' || values[f.key] === undefined || values[f.key] === null)
     )
     if (missing.length > 0) {
@@ -244,9 +273,16 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
     >
       <form id="entity-form" onSubmit={handleSubmit} noValidate>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {fields.map((f) => (
-            <div key={f.key} className={f.type === 'textarea' || f.type === 'multiSelect' || f.type === 'permissions' ? 'sm:col-span-2' : ''}>
-              {f.type === 'select' ? (
+          {visibleFields.map((f, i) => {
+            const prev = visibleFields[i - 1]
+            const showSection = f.section && (!prev || prev.section !== f.section)
+            return (
+              <Fragment key={f.key}>
+                {showSection && (
+                  <h4 className="sm:col-span-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400 mt-3 first:mt-0">{f.section}</h4>
+                )}
+                <div className={f.type === 'textarea' || f.type === 'multiSelect' || f.type === 'permissions' ? 'sm:col-span-2' : ''}>
+                  {f.type === 'select' ? (
                 f.lookup ? (
                   <Select label={f.label} value={values[f.key] ?? ''} onChange={(e) => handleLookupChange(f, e.target.value)}>
                     <option value="">Select…</option>
@@ -327,8 +363,12 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-1 max-h-52 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 p-2">
-                    {(allOptions[f.lookup!.table] ?? []).map((row) => {
-                      const v = row[f.lookup!.valueKey]
+                    {/* Lookup-backed rows (existing) OR static options — the
+                        Scope of Work checkbox groups are static options. */}
+                    {(f.lookup
+                      ? (allOptions[f.lookup.table] ?? []).map((row) => ({ value: row[f.lookup!.valueKey], label: lookupLabel(f, row) }))
+                      : (f.options ?? []).map((o) => ({ value: o, label: o.replace(/_/g, ' ') }))
+                    ).map(({ value: v, label }) => {
                       const checked = (values[f.key] ?? []).includes(v)
                       return (
                         <label key={v} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer rounded px-1.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/50">
@@ -339,7 +379,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                               ? (values[f.key] ?? []).filter((x: string) => x !== v)
                               : [...(values[f.key] ?? []), v])}
                           />
-                          {lookupLabel(f, row)}
+                          {label}
                         </label>
                       )
                     })}
@@ -390,8 +430,10 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                   required={f.required}
                 />
               )}
-            </div>
-          ))}
+                </div>
+              </Fragment>
+            )
+          })}
         </div>
       </form>
     </Modal>

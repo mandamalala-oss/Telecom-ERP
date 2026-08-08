@@ -791,6 +791,20 @@ export function ProjectsModule() {
                   </div>
                 ))}
               </div>
+              {(selected.scopeBuildType || selected.scopeTechnology) && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Scope of Work</p>
+                  <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700 text-sm">
+                    <div className="flex gap-3 px-3 py-2"><span className="w-28 text-slate-500 text-xs font-semibold uppercase">Build Type</span><span className="font-semibold">{selected.scopeBuildType ?? '—'}</span></div>
+                    <div className="flex gap-3 px-3 py-2"><span className="w-28 text-slate-500 text-xs font-semibold uppercase">Technology</span><span className="font-semibold">{selected.scopeTechnology ?? '—'}</span></div>
+                    {(selected.scopeNsbRanItems?.length ?? 0) > 0 && <div className="flex gap-3 px-3 py-2"><span className="w-28 text-slate-500 text-xs font-semibold uppercase">Items</span><span>{selected.scopeNsbRanItems!.join(', ')}</span></div>}
+                    {selected.scopeNsbMwDishSize && <div className="flex gap-3 px-3 py-2"><span className="w-28 text-slate-500 text-xs font-semibold uppercase">Dish</span><span>{selected.scopeNsbMwDishSize}</span></div>}
+                    {(selected.scopeModRanAddItems?.length ?? 0) > 0 && <div className="flex gap-3 px-3 py-2"><span className="w-28 text-slate-500 text-xs font-semibold uppercase">ADD</span><span>{selected.scopeModRanAddItems!.join(', ')}</span></div>}
+                    {(selected.scopeModRanSwapItems?.length ?? 0) > 0 && <div className="flex gap-3 px-3 py-2"><span className="w-28 text-slate-500 text-xs font-semibold uppercase">SWAP</span><span>{selected.scopeModRanSwapItems!.join(', ')}</span></div>}
+                    {selected.scopeModMwSwapDishSize && <div className="flex gap-3 px-3 py-2"><span className="w-28 text-slate-500 text-xs font-semibold uppercase">Dish (SWAP)</span><span>{selected.scopeModMwSwapDishSize}</span></div>}
+                  </div>
+                </div>
+              )}
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Linked Sites ({selSites.length})</p>
                 {selSites.length > 0 ? (

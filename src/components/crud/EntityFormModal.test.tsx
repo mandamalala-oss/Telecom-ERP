@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { EntityFormModal, type FieldConfig } from './EntityFormModal'
+import { EntityFormModal, pruneConditional, type FieldConfig } from './EntityFormModal'
 
 // vitest runs with globals:false, so RTL's auto-cleanup never registers —
 // unmount after every test or renders accumulate and queries go ambiguous.
@@ -406,5 +406,118 @@ describe('EntityFormModal — line items', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
     expect(onSubmit.mock.calls[0][0].items).toHaveLength(0)
+  })
+})
+
+describe('pruneConditional', () => {
+  const fields: FieldConfig[] = [
+    { key: 'build', label: 'Build', type: 'select', options: ['NSB', 'MOD'] },
+    { key: 'tech', label: 'Tech', type: 'select', options: ['RAN', 'MW'] },
+    { key: 'items', label: 'Items', type: 'multiSelect', options: ['A', 'B'], showWhen: (v) => v.build === 'NSB' && v.tech === 'RAN' },
+    { key: 'dish', label: 'Dish', type: 'select', options: ['1m'], showWhen: (v) => v.build === 'NSB' && v.tech === 'MW' },
+  ]
+
+  it('keeps values of active conditional fields', () => {
+    expect(pruneConditional(fields, { build: 'NSB', tech: 'RAN', items: ['A'] })).toEqual({ build: 'NSB', tech: 'RAN', items: ['A'] })
+  })
+
+  it('drops values of now-inactive conditional fields', () => {
+    expect(pruneConditional(fields, { build: 'NSB', tech: 'MW', items: ['A'] })).toEqual({ build: 'NSB', tech: 'MW' })
+    expect(pruneConditional(fields, { build: 'MOD', tech: 'RAN', items: ['A'], dish: '1m' })).toEqual({ build: 'MOD', tech: 'RAN' })
+  })
+
+  it('does not change values when inactive conditional fields are unset', () => {
+    const v = { build: 'NSB', tech: 'MW', dish: '1m' }
+    expect(pruneConditional(fields, v)).toEqual(v)
+  })
+})
+
+describe('EntityFormModal — Scope of Work (conditional sections)', () => {
+  const SCOPE_FIELDS: FieldConfig[] = [
+    { key: 'scopeBuildType', label: 'Build Type', type: 'select', options: ['NSB', 'MOD'] },
+    { key: 'scopeTechnology', label: 'Technology', type: 'select', options: ['RAN', 'MW'] },
+    { key: 'scopeNsbRanItems', label: 'Scope Items', type: 'multiSelect', options: ['ANTENNA', 'RRU', 'FO', 'RACK', 'BASEBAND'], showWhen: (v) => v.scopeBuildType === 'NSB' && v.scopeTechnology === 'RAN' },
+    { key: 'scopeNsbMwDishSize', label: 'Dish Size', type: 'select', options: ['0.3m', '0.6m', '0.9m', '1.2m', '1.8m', '2.4m', '3m'], showWhen: (v) => v.scopeBuildType === 'NSB' && v.scopeTechnology === 'MW' },
+    { key: 'scopeModRanAddItems', label: 'ADD Items', type: 'multiSelect', options: ['RRU', 'ANTENNA', 'RACK', 'BASEBAND'], showWhen: (v) => v.scopeBuildType === 'MOD' && v.scopeTechnology === 'RAN' },
+    { key: 'scopeModRanSwapItems', label: 'SWAP Items', type: 'multiSelect', options: ['RRU', 'ANTENNA', 'RACK', 'BASEBAND'], showWhen: (v) => v.scopeBuildType === 'MOD' && v.scopeTechnology === 'RAN' },
+    { key: 'scopeModMwSwapDishSize', label: 'Dish Size — SWAP', type: 'select', options: ['0.3m', '0.6m', '0.9m', '1.2m', '1.8m', '2.4m', '3m'], showWhen: (v) => v.scopeBuildType === 'MOD' && v.scopeTechnology === 'MW' },
+  ]
+
+  const pick = async (build: string, tech: string) => {
+    await userEvent.selectOptions(screen.getByLabelText('Build Type'), build)
+    await userEvent.selectOptions(screen.getByLabelText('Technology'), tech)
+  }
+
+  it('acceptance #1 — NSB + RAN shows exactly the 5-item checkbox group', async () => {
+    renderForm(SCOPE_FIELDS)
+    expect(screen.queryByRole('checkbox')).toBeNull() // nothing until both selectors
+    await pick('NSB', 'RAN')
+    const boxes = screen.getAllByRole('checkbox').map((b) => b.getAttribute('aria-label') ?? '')
+    // checkbox labels come from the <label> text; assert the full set
+    for (const o of ['ANTENNA', 'RRU', 'FO', 'RACK', 'BASEBAND']) {
+      expect(screen.getByRole('checkbox', { name: o })).toBeTruthy()
+    }
+    expect(boxes).toHaveLength(5)
+    expect(screen.queryByLabelText('Dish Size')).toBeNull()
+  })
+
+  it('acceptance #2 — NSB + MW shows exactly the dish-size dropdown', async () => {
+    renderForm(SCOPE_FIELDS)
+    await pick('NSB', 'MW')
+    expect(screen.getByLabelText('Dish Size')).toBeTruthy()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    expect(screen.queryByText('ADD Items')).toBeNull()
+  })
+
+  it('acceptance #3 — MOD + RAN shows both ADD and SWAP groups simultaneously', async () => {
+    renderForm(SCOPE_FIELDS)
+    await pick('MOD', 'RAN')
+    expect(screen.getByText('ADD Items')).toBeTruthy()
+    expect(screen.getByText('SWAP Items')).toBeTruthy()
+    // Same 4 options in each group → 8 checkboxes
+    expect(screen.getAllByRole('checkbox')).toHaveLength(8)
+    expect(screen.queryByText('Dish Size')).toBeNull()
+  })
+
+  it('acceptance #4 — MOD + MW shows exactly the SWAP dish-size dropdown', async () => {
+    renderForm(SCOPE_FIELDS)
+    await pick('MOD', 'MW')
+    expect(screen.getByLabelText('Dish Size — SWAP')).toBeTruthy()
+    expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+    expect(screen.queryByText('ADD Items')).toBeNull()
+  })
+
+  it('acceptance #5 — switching a selector clears the stale sub-selections', async () => {
+    const onSubmit = renderForm(SCOPE_FIELDS)
+    await pick('NSB', 'RAN')
+    await userEvent.click(screen.getByRole('checkbox', { name: 'ANTENNA' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'RRU' }))
+    // Switch Technology to MW: the NSB/RAN group hides and its values are pruned.
+    await userEvent.selectOptions(screen.getByLabelText('Technology'), 'MW')
+    expect(screen.queryByLabelText('Scope Items')).toBeNull()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    const payload = onSubmit.mock.calls[0][0]
+    expect(payload.scopeBuildType).toBe('NSB')
+    expect(payload.scopeTechnology).toBe('MW')
+    // The pruned group is saved as an empty array — i.e. cleared, not stale.
+    expect(payload.scopeNsbRanItems).toEqual([])
+  })
+
+  it('acceptance #6 — persisted values reload with their conditional section', async () => {
+    const onSubmit = renderForm(SCOPE_FIELDS, {
+      scopeBuildType: 'NSB',
+      scopeTechnology: 'RAN',
+      scopeNsbRanItems: ['ANTENNA', 'RRU'],
+    })
+    const ant = screen.getByRole('checkbox', { name: 'ANTENNA' }) as HTMLInputElement
+    const rru = screen.getByRole('checkbox', { name: 'RRU' }) as HTMLInputElement
+    const fo = screen.getByRole('checkbox', { name: 'FO' }) as HTMLInputElement
+    expect(ant.checked).toBe(true)
+    expect(rru.checked).toBe(true)
+    expect(fo.checked).toBe(false)
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0].scopeNsbRanItems).toEqual(['ANTENNA', 'RRU'])
   })
 })

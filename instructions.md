@@ -51,7 +51,7 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ## ✅ Current state (verified 2026-08)
 
-- `npm test` → **184/184 passing** (14 files)
+- `npm test` → **193/193 passing** (14 files)
 - `npx tsc --noEmit` → clean (test files are inside `src`, so they're typechecked too)
 - `npm run build` → succeeds (pre-existing chunk-size warning only, unrelated)
 - HEAD: `50356c0` — **everything pushed to `origin/main`** (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked).
@@ -120,6 +120,23 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 **Bugfix (migration 022):** `insert_project_with_goods` originally cast `jsonb → text[]` for the `team` column, which doesn't exist in Postgres — plpgsql only fails at first execution, so the PO-received trigger died with "cannot cast type jsonb to text[]" and blocked BOTH the auto-Invoice and the auto-Project. Fixed with `jsonb_array_elements_text`; `changePoStatus` also now creates the Invoice BEFORE the Project so one failure can never block the other. **Run 021 + 022 on the live DB** (021 adds `delivery_type` to quotes/invoices/payments — required for the inherited field to save).
 
 **Assumptions:** "PO status = Accepted" from the original `auto-project.md` was superseded by the user's explicit trigger on **PO received**; `accepted` remains a legal PO status (harmless); project name = PO number; no contact field added to POs/Quotes ("if any" branch → blank); no unique index on `po_reference` (app-level idempotency check only, matching `hasAutoDoc` style).
+
+---
+
+### Milestone 16 — Scope of Work section on telecom projects (per `SOW.md`)
+
+**Fields** (projects table, migration 023 — **NOT yet run on live DB**):
+- `scope_build_type` select `NSB` | `MOD` and `scope_technology` select `RAN` | `MW` — the two top-level selectors
+- `scope_nsb_ran_items` **text[]** multi-select (`ANTENNA, RRU, FO, RACK, BASEBAND`) — NSB+RAN
+- `scope_nsb_mw_dish_size` select dish size (`0.3m…3m`) — NSB+MW
+- `scope_mod_ran_add_items` + `scope_mod_ran_swap_items` **text[]** (both `RRU, ANTENNA, RACK, BASEBAND`) — MOD+RAN (independent ADD & SWAP groups)
+- `scope_mod_mw_swap_dish_size` select dish size — MOD+MW (SWAP only)
+
+**UI** (`EntityFormModal` + `entityConfigs.projects`): checkbox groups are the existing `multiSelect` field type, now with **static `options` support** (previously lookup-only) storing **text[] columns** (codebase convention, like `projects.team`). New `FieldConfig.showWhen(values)` + `section` props: sub-fields render only once BOTH selectors have a value; `pruneConditional` drops the values of now-hidden conditional fields on every selector change **and** on modal open, so stale sub-selections are never saved or reloaded; required-validation only counts visible fields. Telecom detail modal shows a Scope of Work summary when set. Supply projects unaffected.
+
+**Tests**: 9 new (6 acceptance checks + 3 `pruneConditional` unit) → **193/193**, `tsc` clean, build green. Acceptance: NSB+RAN → exactly the 5-item checkbox group; NSB+MW → dish dropdown; MOD+RAN → ADD+SWAP together (8 checkboxes); MOD+MW → SWAP dish only; switching selectors clears sub-selections; saved values reload with their section active.
+
+**Assumptions**: multi-select stored as `text[]` array columns (not join table / booleans); field names keep the SOW's `scope_*` snake_case → camelCase app shape (`scopeBuildType`, `scopeNsbRanItems`, …); dish-size options exactly as listed; Build Type + Technology are the first two controls of the section (heading "Scope of Work" rendered above Build Type).
 
 ---
 
