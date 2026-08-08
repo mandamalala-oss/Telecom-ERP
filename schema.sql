@@ -110,6 +110,11 @@ create table sites (
   power_source  text check (power_source in ('grid','generator','solar','hybrid')),
   access_type   text default 'road' check (access_type in ('road','offroad','boat')),
   distance_km   numeric(10,2) default 0,
+  -- Access & transmission (migration 024):
+  means_of_transport text[] default '{}',
+  transport_length_km numeric(10,2) default 0,
+  walk_distance_km    numeric(10,2) default 0,
+  transmission_type   text,
   revenue       bigint default 0,
   notes         text,
   created_at    timestamptz default now(),

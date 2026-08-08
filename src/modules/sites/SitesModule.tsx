@@ -203,6 +203,9 @@ export function SitesModule() {
                 { l: 'Power Source',  v: selected.powerSource },
                 { l: 'Access',        v: selected.accessType },
                 { l: 'Distance',      v: fmtKm(selected.distanceKm) },
+                { l: 'Transmission',  v: selected.transmissionType ?? '—' },
+                { l: 'Transport',     v: (selected.meansOfTransport ?? []).length > 0 ? `${selected.meansOfTransport!.join(', ')}${selected.transportLengthKm ? ` · ${fmtKm(selected.transportLengthKm)}` : ''}` : '—' },
+                { l: 'Walk from 4x4', v: fmtKm(selected.walkDistanceKm) },
                 { l: 'Revenue',       v: fmt(selected.revenue) },
                 { l: 'Last Updated',  v: selected.updatedAt },
               ].map(item => (

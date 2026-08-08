@@ -142,6 +142,18 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ---
 
+### Milestone 17 — Site access & transmission fields (per user 2026-08, migration 024 — NOT yet run on live DB)
+
+- `sites.means_of_transport` **text[]** — checkbox multi-select (**4x4, moto, boat, foot**), more than one allowed (replaces the old single-choice `access_type` concept; the column stays for existing data)
+- `sites.transport_length_km` numeric — transport leg length in km
+- `sites.walk_distance_km` numeric — distance from the end of the 4x4 track to the site (on foot), km
+- `sites.transmission_type` select — **MW | VSAT | STARLINK | OF**
+- `sites.technology` form input changed from comma-`tags` to **multiSelect checkboxes (2G, 3G, 4G, 5G)** (column unchanged — still text[])
+- SitesModule detail modal shows Transmission / Transport (means + length) / Walk-from-4x4 rows
+- **Assumptions**: transport options = 4x4/moto/boat/foot; one km field per transport leg (singular "its length"); `access_type` kept; SitesModule filter (`ALL_TECHS`) left broader than the form options.
+
+---
+
 ## 🔒 Git / environment notes (IMPORTANT for future sessions)
 
 - **Home directory is READ-ONLY** (container): no `~/.ssh`, no `~/.git-credentials` can be created. SSH to GitHub is impossible; **HTTPS + PAT is the only auth path**.

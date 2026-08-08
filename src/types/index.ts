@@ -124,6 +124,14 @@ export interface Site {
   powerSource: PowerSource;
   accessType: 'road' | 'offroad' | 'boat';
   distanceKm?: number;
+  /** Checkbox multi-select of transport means (more than one allowed). */
+  meansOfTransport?: string[];
+  /** Length of the transport leg in km. */
+  transportLengthKm?: number;
+  /** Distance from the end of the 4x4 track to the site (on foot), km. */
+  walkDistanceKm?: number;
+  /** Transmission: MW | VSAT | STARLINK | OF. */
+  transmissionType?: string;
   altitude?: number;
   revenue: number;
   notes: string;
