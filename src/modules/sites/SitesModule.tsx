@@ -111,7 +111,7 @@ export function SitesModule() {
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead><tr>
-                {['Site ID','Name','Region','Technology','Status','Priority','Tower','Power','Distance','Revenue','Coordinates',''].map(h => <th key={h} className="th">{h}</th>)}
+                {['Site ID','Name','Region','Customer','Technology','Transmission','Status','Priority','Tower','Power','Distance','Revenue','Coordinates',''].map(h => <th key={h} className="th">{h}</th>)}
               </tr></thead>
               <tbody>
                 {filtered.map(s => (
@@ -124,11 +124,13 @@ export function SitesModule() {
                         <span className="text-xs">{s.region}</span>
                       </div>
                     </td>
+                    <td className="td text-xs whitespace-nowrap">{s.customerName ?? '—'}</td>
                     <td className="td">
                       <div className="flex flex-wrap gap-1">
                         {(s.technology ?? []).map(t => <Badge key={t} status={t}>{t}</Badge>)}
                       </div>
                     </td>
+                    <td className="td text-xs whitespace-nowrap">{s.transmissionType ?? '—'}</td>
                     <td className="td"><Badge status={s.status} /></td>
                     <td className="td"><Badge status={s.priority} /></td>
                     <td className="td text-xs capitalize text-slate-500">{s.towerType?.replace('_',' ')}</td>
@@ -164,15 +166,17 @@ export function SitesModule() {
               <div className="flex items-center gap-1 text-xs text-slate-500 mb-2">
                 <MapPin className="w-3 h-3" />{s.region} · {s.latitude?.toFixed?.(3)}, {s.longitude?.toFixed?.(3)}
               </div>
-              <p className="text-xs text-slate-500 mb-2">{s.region}</p>
+              {s.customerName && <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">Customer: {s.customerName}</p>}
               <div className="flex flex-wrap gap-1 mb-3">
                 {(s.technology ?? []).map(t => <Badge key={t} status={t}>{t}</Badge>)}
+                {s.transmissionType && <Badge status="approved">{s.transmissionType}</Badge>}
               </div>
               <div className="grid grid-cols-2 gap-2 pt-3 border-t border-slate-100 dark:border-slate-700 text-xs">
                 <div><p className="text-slate-400">Tower</p><p className="font-semibold capitalize text-slate-700 dark:text-slate-300">{s.towerType?.replace('_',' ')}</p></div>
                 <div><p className="text-slate-400">Power</p><p className="font-semibold capitalize text-slate-700 dark:text-slate-300">{s.powerSource}</p></div>
                 <div><p className="text-slate-400">Priority</p><Badge status={s.priority} /></div>
                 <div><p className="text-slate-400">Distance</p><p className="font-semibold text-slate-700 dark:text-slate-300">{fmtKm(s.distanceKm)}</p></div>
+                <div><p className="text-slate-400">Transmission</p><p className="font-semibold text-slate-700 dark:text-slate-300">{s.transmissionType ?? '—'}</p></div>
                 <div><p className="text-slate-400">Revenue</p><p className="font-semibold text-green-600">{fmt(s.revenue)}</p></div>
               </div>
             </Card>
