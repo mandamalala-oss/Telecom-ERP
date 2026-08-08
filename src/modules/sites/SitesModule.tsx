@@ -194,6 +194,7 @@ export function SitesModule() {
               {[
                 { l: 'Site ID',   v: selected.siteId },
                 { l: 'Region',    v: selected.region },
+                { l: 'Customer',  v: selected.customerName ?? '—' },
                 { l: 'Status',    v: <Badge status={selected.status} /> },
                 { l: 'Latitude',  v: selected.latitude?.toFixed?.(6) },
                 { l: 'Longitude', v: selected.longitude?.toFixed?.(6) },

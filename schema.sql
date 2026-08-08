@@ -100,6 +100,8 @@ create table sites (
   site_id       text unique not null,
   name          text not null,
   region        text not null,
+  customer_id   uuid,
+  customer_name text,
   latitude      numeric(10,7) not null,
   longitude     numeric(10,7) not null,
   altitude      numeric(7,1),

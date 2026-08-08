@@ -129,6 +129,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'siteId', label: 'Site ID', type: 'text', required: true, placeholder: 'MDG-TAN-001' },
     { key: 'name', label: 'Name', type: 'text', required: true },
     { key: 'region', label: 'Region', type: 'select', options: REGIONS },
+    { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { customerId: 'id' } } },
     { key: 'latitude', label: 'Latitude', type: 'number' },
     { key: 'longitude', label: 'Longitude', type: 'number' },
     { key: 'technology', label: 'Technology', type: 'multiSelect', options: ['2G', '3G', '4G', '5G'] },

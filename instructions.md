@@ -150,6 +150,7 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 - `sites.transmission_type` select — **MW | VSAT | STARLINK | OF**
 - `sites.technology` form input changed from comma-`tags` to **multiSelect checkboxes (2G, 3G, 4G, 5G)** (column unchanged — still text[])
 - SitesModule detail modal shows Transmission / Transport (means + length) / Walk-from-4x4 rows
+- **Customer** added to sites (migration 025): `sites.customer_name` + `customer_id` — dropdown from the **Customer module** (`companies`), same lookup convention as quotes/invoices; shown in the Site detail modal
 - **Assumptions**: transport options = 4x4/moto/boat/foot; one km field per transport leg (singular "its length"); `access_type` kept; SitesModule filter (`ALL_TECHS`) left broader than the form options.
 
 ---

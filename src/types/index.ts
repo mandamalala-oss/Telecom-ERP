@@ -115,6 +115,9 @@ export interface Site {
   siteId: string;
   name: string;
   region: Region;
+  /** Customer selected from the Customer module (companies). */
+  customerId?: string;
+  customerName?: string;
   latitude: number;
   longitude: number;
   technology: Technology[];
