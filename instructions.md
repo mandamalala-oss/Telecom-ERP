@@ -54,9 +54,9 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 - `npm test` → **183/183 passing** (14 files)
 - `npx tsc --noEmit` → clean (test files are inside `src`, so they're typechecked too)
 - `npm run build` → succeeds (pre-existing chunk-size warning only, unrelated)
-- HEAD: pending Milestone 15 commit — **everything else pushed to `origin/main`** (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked).
+- HEAD: `50356c0` — **everything pushed to `origin/main`** (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked).
 - Access model is now **grant-based (CEO-only)** — see Milestone 13 below. `ROLE_PERMISSIONS` is GONE from `src/types`; roles are labels only (DB RLS still role-scoped).
-- Finance automation + Supply/Trading projects — see **Milestone 14** below; auto-create Project from SUPPLY+Accepted PO — see **Milestone 15** below (migrations 014–018 applied; **019 AND 020 pending on the live DB**).
+- Finance automation + Supply/Trading projects — see **Milestone 14** below; auto-create Project from SUPPLY+Accepted PO — see **Milestone 15** below (migrations 014–020 **all applied on the live DB**).
 - Milestone 10 changed: `src/App.tsx`, `src/contexts/AuthContext.tsx` (+`.test.tsx`), `src/components/auth/` (LoginPage + test), `src/components/layout/Header.tsx`, `database/schema.sql`, `schema.sql`; new `database/migrations/012_auth_rls.sql`
 - Milestone 8 changed: `src/components/crud/EntityFormModal.tsx` + `.test.tsx`, `src/lib/hooks/useEntityCrud.tsx`, `src/lib/api/entityConfigs.ts` + `.test.ts`, `src/lib/evm.ts` + `.test.ts`, `src/modules/controls/EVMModule.tsx`
 - Milestone 6 changed: `database/schema.sql`, `schema.sql`, `src/lib/api/entityConfigs.ts`, `src/lib/evm.ts` + `.test.ts`, `src/modules/controls/EVMModule.tsx`, `src/types/index.ts`; new `database/migrations/011_add_evm_po.sql`
@@ -93,7 +93,7 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 - **Line-items editor** (`lineItems` field type in EntityFormModal + `formPayload`): Designation/Qty/Unit/Unit-price rows, derived subtotal/tax/total (cleared rate zeroes tax; POs keep manual tax).
 
 **Projects — Supply/Trading business line (`project_type`, migration 019):**
-- `project_type` (`telecom_service` default | `supply_trading`), delivery fields, `project_supply_items` goods table; **migration `019_project_type_supply.sql` NOT yet run on the live DB**. New schema tables must be registered in `TABLES`/`FIELD_CONFIGS` or the entityConfigs invariant test fails.
+- `project_type` (`telecom_service` default | `supply_trading`), delivery fields, `project_supply_items` goods table (**migration 019 RUN on the live DB**). New schema tables must be registered in `TABLES`/`FIELD_CONFIGS` or the entityConfigs invariant test fails.
 - New Project shows a **type picker**; supply projects use a custom modal (`SupplyProjectModal` in ProjectsModule.tsx): common + delivery fields, goods table (Code/Desc/Unit/Qty/Purchase/Selling/Margin-per-unit/Total, fixed widths), **From Quote** pre-fill (name = quote number, customer, items with codes 1..n, selling price from the quote), customer dropdown from the companies module.
 - Save writes back `budget = totalCost` (BAC), `spent = totalCost` (AC — **not 0**, both create and edit), `revenue = totalSelling` (PO); margin = PO − AC. Modal **closes on save**; progress **auto-100% when completed**; exact prices everywhere (`fmt` never abbreviates to "3.3M").
 - Cards: 📡/📦 badge, delivery row for supply (status/items/PO ref), type filter, summary breakdown by type, supply detail view (goods + EVM). Telecom path untouched (PhaseTimeline/syncSites).
@@ -113,7 +113,7 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 - Goods lines ← line items of the Quote(s) linked to the PO (via new `purchase_orders.quote_id`, set by quote-accepted automation; fallback = quote number mentioned in PO notes): Description/Unit/Qty/Unit-Price→Selling; purchase price 0 (manual). No linked Quote → Project still created, without goods lines
 - Supply convention: budget = spent = 0 (purchase cost manual), revenue = total selling
 
-**Atomicity**: `database/migrations/020_po_delivery_type_auto_project.sql` adds `insert_project_with_goods(jsonb, jsonb)` — inserts the Project + its `project_supply_items` rows in **one transaction** (called via `supabase.rpc`; security invoker, so RLS still applies). **Migration 020 NOT yet run on the live DB** (019 also pending).
+**Atomicity**: `database/migrations/020_po_delivery_type_auto_project.sql` adds `insert_project_with_goods(jsonb, jsonb)` — inserts the Project + its `project_supply_items` rows in **one transaction** (called via `supabase.rpc`; security invoker, so RLS still applies). **Migrations 019 + 020 RUN on the live DB (verified by user).**
 
 **Project form:** Customer Contact in `SupplyProjectModal` is now a Select **restricted to Contacts of the selected customer** (was free text); legacy free-text values survive an edit. Auto-created projects leave it blank (POs/Quotes have no contact field).
 
@@ -138,7 +138,7 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ## ✅ Migrations status
 
-**002 + 003: RUN on live DB, verified.** 004–018: **WRITTEN, NONE RUN YET** — run in order (004 → 018) in Supabase SQL Editor before using the affected modules. 010 is a review-first data-repair script — **backup first**. 012 locks the core tables behind real auth — deploy the new app build at the same time. 013–017 are auth fixes; 018 switches roles to CEO/Manager/Inspector/Team Leader.
+**002 + 003: RUN on live DB, verified. 004–020: ALL RUN on live DB** (verified by user 2026-08: 004–018 previously, 019 + 020 now). 010 is a review-first data-repair script — **backup first**. 012 locks the core tables behind real auth — deploy the new app build at the same time. 013–017 are auth fixes; 018 switches roles to CEO/Manager/Inspector/Team Leader.
 
 - `002_add_created_at.sql` — RUN, verified (all 7 tables answer `order=created_at`)
 - `003_link_columns.sql` — RUN, verified (`site_code`/`site_name`/`project_name` on installation/integration records)
