@@ -163,4 +163,19 @@ describe('buildPayload — lineItems', () => {
     const { payload } = buildPayload([f('items')], {})
     expect(payload.items).toEqual([])
   })
+
+  it('BOQ rows compute unitCost → totalCost and keep finance rows unchanged', () => {
+    const { payload } = buildPayload(
+      [f('items')],
+      {
+        items: [
+          { id: 'b1', itemCode: 'C01', description: 'Concrete', category: 'civil', quantity: '10', unit: 'm3', unitCost: '250000', totalCost: 0 },
+          { id: 'b2', itemCode: '', description: '', category: '', quantity: '', unit: '', unitCost: '', totalCost: 0 },
+        ],
+      }
+    )
+    expect(payload.items).toEqual([
+      { id: 'b1', itemCode: 'C01', description: 'Concrete', category: 'civil', quantity: 10, unit: 'm3', unitPrice: null, total: 0, unitCost: 250000, totalCost: 2500000 },
+    ])
+  })
 })

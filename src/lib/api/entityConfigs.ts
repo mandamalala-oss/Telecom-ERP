@@ -1,4 +1,4 @@
-import type { FieldConfig } from '@/components/crud/EntityFormModal'
+import type { FieldConfig, LineColumn } from '@/components/crud/EntityFormModal'
 
 // Table names, keyed by the same short name used across the app/modules.
 export const TABLES = {
@@ -82,6 +82,25 @@ const MOD_RAN_ITEMS = ['RRU', 'ANTENNA', 'RACK', 'BASEBAND']
 // (EntityFormModal hides them via showWhen and prunes stale values on switch).
 const scopeIs = (buildType: string, technology: string) => (v: Record<string, any>) =>
   v.scopeBuildType === buildType && v.scopeTechnology === technology
+
+// ─── BOQ line items ─────────────────────────────────────────────────────────
+const BOQ_LINE_COLUMNS: LineColumn[] = [
+  { key: 'itemCode', label: 'Code', span: 1 },
+  { key: 'description', label: 'Description', span: 3 },
+  { key: 'category', label: 'Category', span: 2, type: 'select', options: ['civil', 'supply', 'installation', 'integration', 'testing', 'pm', 'hse', 'other'] },
+  { key: 'unit', label: 'Unit', span: 1 },
+  { key: 'quantity', label: 'Qty', span: 1, type: 'number' },
+  { key: 'unitCost', label: 'Unit Cost', span: 2, type: 'number' },
+]
+
+// BOQ totals are DERIVED from the line items + contingency % — the form
+// fields for subtotal/contingency/grandTotal are kept in sync automatically.
+const boqDerive = (v: Record<string, any>) => {
+  const subtotal = (v.items ?? []).reduce((s: number, i: any) => s + (Number(i.totalCost) || 0), 0)
+  const pct = Number(v.contingencyPct) || 0
+  const contingency = Math.round((subtotal * pct) / 100)
+  return { subtotal, contingency, grandTotal: subtotal + contingency }
+}
 
 export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   leads: [
@@ -359,8 +378,10 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { customerId: 'id' } } },
     { key: 'siteName', label: 'Site', type: 'text' },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'submitted', 'approved', 'revised', 'superseded'] },
+    { key: 'items', label: 'Line Items', type: 'lineItems', lineColumns: BOQ_LINE_COLUMNS, derive: boqDerive },
     { key: 'subtotal', label: 'Subtotal (Ar)', type: 'number' },
     { key: 'contingencyPct', label: 'Contingency %', type: 'number' },
+    { key: 'contingency', label: 'Contingency (Ar)', type: 'number' },
     { key: 'grandTotal', label: 'Grand Total (Ar)', type: 'number' },
     { key: 'createdBy', label: 'Created By', type: 'text' },
     { key: 'notes', label: 'Notes', type: 'textarea' },

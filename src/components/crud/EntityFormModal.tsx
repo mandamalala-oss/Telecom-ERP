@@ -1,7 +1,8 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
+import { X, Plus } from 'lucide-react'
+import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Input, Select, Textarea } from '@/components/ui/Input'
-import { Button } from '@/components/ui/Button'
 import { makeApi } from '@/lib/api/crud'
 import { buildPayload } from '@/lib/formPayload'
 import { PERMISSION_MODULES } from '@/types'
@@ -54,6 +55,22 @@ export interface FieldConfig {
   showWhen?: (values: Record<string, any>) => boolean
   /** Optional heading rendered above the first field of a form section. */
   section?: string
+  /** Custom columns for a `lineItems` editor (default: the finance columns). */
+  lineColumns?: LineColumn[]
+  /** Compute derived values (e.g. totals) after any value change — merged
+   * into the form values, so derived fields are never stale. */
+  derive?: (values: Record<string, any>) => Record<string, any>
+}
+
+/** One column of a configurable `lineItems` editor row. */
+export interface LineColumn {
+  key: string
+  label: string
+  span?: number
+  type?: 'text' | 'number' | 'select'
+  options?: string[]
+  /** Input placeholder; defaults to the header label. */
+  placeholder?: string
 }
 
 interface Props {
@@ -67,6 +84,22 @@ interface Props {
   extraLookup?: Record<string, any[]>
 }
 
+// Default line-item columns (finance quote/invoice/PO shape).
+const LINE_DEFAULT_COLUMNS: LineColumn[] = [
+  { key: 'description', label: 'Designation', span: 4 },
+  { key: 'quantity', label: 'Qty', span: 2, type: 'number' },
+  { key: 'unit', label: 'Unit', span: 2 },
+  { key: 'unitPrice', label: 'Unit Price', span: 2, type: 'number', placeholder: 'Price' },
+]
+
+// Tailwind only emits literal classes, so map spans through this static
+// lookup instead of building `col-span-${n}` at runtime (those would be
+// purged and every column would collapse to 1/12 width).
+const COL_SPANS: Record<number, string> = {
+  1: 'col-span-1', 2: 'col-span-2', 3: 'col-span-3', 4: 'col-span-4',
+}
+const spanCls = (n?: number) => COL_SPANS[n ?? 2] ?? 'col-span-2'
+
 // Drop the values of conditional fields whose `showWhen` no longer applies,
 // so switching a selector (e.g. Build Type / Technology) clears the now-
 // irrelevant sub-fields instead of hiding them with stale data underneath.
@@ -77,6 +110,21 @@ export function pruneConditional(fields: FieldConfig[], values: Record<string, a
     if (f.showWhen && !f.showWhen(values)) {
       out = out ?? { ...values }
       delete out[f.key]
+    }
+  }
+  return out ?? values
+}
+
+// Merge the outputs of every field's `derive` (e.g. BOQ totals) into the
+// form values. Pure + exported for unit tests.
+export function applyDerived(fields: FieldConfig[], values: Record<string, any>): Record<string, any> {
+  let out: Record<string, any> | null = null
+  for (const f of fields) {
+    if (!f.derive) continue
+    const d = f.derive(values)
+    if (d && Object.keys(d).length > 0) {
+      out = out ?? { ...values }
+      for (const k of Object.keys(d)) out[k] = d[k]
     }
   }
   return out ?? values
@@ -98,7 +146,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   // pruneConditional also guards against rows whose stored sub-fields
   // disagree with their selectors (only writable via direct SQL).
   useEffect(() => {
-    if (open) setValues(pruneConditional(fields, buildInitial(fields, initial)))
+    if (open) setValues(applyDerived(fields, pruneConditional(fields, buildInitial(fields, initial))))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -124,7 +172,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   if (!open) return null
 
   const set = (k: string, v: any) =>
-    setValues((prev) => pruneConditional(fields, { ...prev, [k]: v }))
+    setValues((prev) => applyDerived(fields, pruneConditional(fields, { ...prev, [k]: v })))
 
   // Only fields whose conditional section is active are rendered + validated;
   // switching a selector prunes the stale sub-field values (see set).
@@ -137,10 +185,15 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
     typeof crypto !== 'undefined' && crypto.randomUUID
       ? crypto.randomUUID()
       : `li-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  const lineTotal = (i: any) => (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0)
+  const linePriceKey = (f: FieldConfig) => (f.lineColumns ? 'unitCost' : 'unitPrice')
+  const lineTotalKey = (f: FieldConfig) => (f.lineColumns ? 'totalCost' : 'total')
+  const lineTotal = (f: FieldConfig, i: any) => (Number(i.quantity) || 0) * (Number(i[linePriceKey(f)]) || 0)
   const applyLineTotals = (f: FieldConfig, items: any[], taxRate?: number) => {
-    const rows = items.map((i) => ({ ...i, total: lineTotal(i) }))
+    const rows = items.map((i) => ({ ...i, [lineTotalKey(f)]: lineTotal(f, i) }))
     set(f.key, rows)
+    // BOQ-style editors derive their own totals (subtotal/contingency/grandTotal
+    // via the field's `derive`); finance-style editors set them here.
+    if (f.lineColumns) return
     const subtotal = rows.reduce((s, i) => s + (i.total ?? 0), 0)
     set('subtotal', subtotal)
     const rate = taxRate !== undefined ? taxRate : Number(values.taxRate) || 0
@@ -159,8 +212,13 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
     items[idx] = { ...items[idx], ...patch }
     applyLineTotals(f, items)
   }
-  const addLine = (f: FieldConfig) =>
-    applyLineTotals(f, [...(values[f.key] ?? []), { id: lineId(), description: '', quantity: '', unit: '', unitPrice: '', total: 0 }])
+  const addLine = (f: FieldConfig) => {
+    const base: Record<string, any> = { id: lineId(), description: '', quantity: '', unit: '' }
+    for (const c of f.lineColumns ?? []) base[c.key] = ''
+    base[linePriceKey(f)] = ''
+    base[lineTotalKey(f)] = 0
+    return applyLineTotals(f, [...(values[f.key] ?? []), base])
+  }
   const removeLine = (f: FieldConfig, idx: number) =>
     applyLineTotals(f, (values[f.key] ?? []).filter((_: any, i: number) => i !== idx))
   const itemsField = fields.find((x) => x.type === 'lineItems')
@@ -417,19 +475,25 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</p>
                   <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700">
                     <div className="grid grid-cols-12 gap-2 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-                      <span className="col-span-4">Designation</span>
-                      <span className="col-span-2">Qty</span>
-                      <span className="col-span-2">Unit</span>
-                      <span className="col-span-2">Unit Price</span>
-                      <span className="col-span-2 text-right">Total</span>
+                      {(f.lineColumns ?? LINE_DEFAULT_COLUMNS).map(c => (
+                        <span key={c.key} className={spanCls(c.span)}>{c.label}</span>
+                      ))}
+                      <span className="col-span-1 text-right">Total</span>
+                      <span className="col-span-1" />
                     </div>
                     {(values[f.key] ?? []).map((item: any, idx: number) => (
                       <div key={item.id} className="grid grid-cols-12 gap-2 px-3 py-1.5 items-center">
-                        <input className="input col-span-4" placeholder="Designation" value={item.description ?? ''} onChange={(e) => updateLine(f, idx, { description: e.target.value })} />
-                        <input className="input col-span-2" type="number" min={0} placeholder="Qty" value={item.quantity ?? ''} onChange={(e) => updateLine(f, idx, { quantity: e.target.value })} />
-                        <input className="input col-span-2" placeholder="Unit" value={item.unit ?? ''} onChange={(e) => updateLine(f, idx, { unit: e.target.value })} />
-                        <input className="input col-span-2" type="number" min={0} placeholder="Price" value={item.unitPrice ?? ''} onChange={(e) => updateLine(f, idx, { unitPrice: e.target.value })} />
-                        <span className="col-span-1 text-right text-xs font-semibold">{lineTotal(item).toLocaleString()}</span>
+                        {(f.lineColumns ?? LINE_DEFAULT_COLUMNS).map(c => (
+                          c.type === 'select' ? (
+                            <select key={c.key} className={`input ${spanCls(c.span)}`} value={item[c.key] ?? ''} onChange={(e) => updateLine(f, idx, { [c.key]: e.target.value })}>
+                              <option value="">{c.label}…</option>
+                              {(c.options ?? []).map(o => <option key={o} value={o}>{o.replace(/_/g, ' ')}</option>)}
+                            </select>
+                          ) : (
+                            <input key={c.key} className={`input ${spanCls(c.span)}`} type={c.type === 'number' ? 'number' : 'text'} min={0} placeholder={c.placeholder ?? c.label} value={item[c.key] ?? ''} onChange={(e) => updateLine(f, idx, { [c.key]: e.target.value })} />
+                          )
+                        ))}
+                        <span className="col-span-1 text-right text-xs font-semibold">{lineTotal(f, item).toLocaleString()}</span>
                         <button type="button" onClick={() => removeLine(f, idx)} aria-label="Remove line" className="col-span-1 text-red-400 hover:text-red-600 text-xs">✕</button>
                       </div>
                     ))}

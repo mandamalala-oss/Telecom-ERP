@@ -155,6 +155,18 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ---
 
+### Milestone 18 — BOQ module fully working + linked to Supabase
+
+- **Migration 026** (`database/migrations/026_create_boqs_table.sql`) — the `boqs` table existed only in `schema.sql`, **no migration → missing on the live DB**, so every BOQ query failed. Now `create table if not exists` + trigger + permissive RLS policy. **NOT yet run on live DB.**
+- **Line items editor** in the BOQ form: `FieldConfig.lineColumns` makes the generic `lineItems` editor column-configurable (Code/Description/Category/Unit/Qty/Unit Cost; finance keeps its default columns unchanged). Tailwind spans go through a static `COL_SPANS` lookup (dynamic `col-span-${n}` would be purged).
+- **Derived totals**: `FieldConfig.derive` recomputes `subtotal` / `contingency` (from `contingencyPct`) / `grandTotal` from the items on every change and on modal open — never stale, stored too.
+- **buildPayload** handles both line-item shapes: finance (`unitPrice`/`total`) output byte-identical; BOQ rows add `unitCost`/`totalCost` and empty rows are dropped.
+- **Buttons wired**: **Approve BOQ** → status `approved` + `approvedBy`/`approvedAt` from the auth user (guarded by `editable`; shows "Approved ✓" when done); **Export** (card + modal) → Excel-compatible CSV download with BOM; View Details / Edit / Delete already worked via crud.
+- **Tests**: +4 (applyDerived, BOQ form flow with derived totals, buildPayload BOQ shape) → **197/197**, tsc clean, build green.
+- Assumptions: `boqNumber` stays manual; `version` left to the DB default 1 (no UI yet); totals are always derived, not hand-editable.
+
+---
+
 ## 🔒 Git / environment notes (IMPORTANT for future sessions)
 
 - **Home directory is READ-ONLY** (container): no `~/.ssh`, no `~/.git-credentials` can be created. SSH to GitHub is impossible; **HTTPS + PAT is the only auth path**.

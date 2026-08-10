@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
+import { useAuth } from '@/contexts/AuthContext'
 import { TABLES } from '@/lib/api/entityConfigs'
 import type { BOQ, BOQItem } from '@/types/v2'
 
@@ -21,12 +22,57 @@ const CAT_COLORS: Record<string, string> = {
   hse:'bg-red-100 text-red-700', other:'bg-slate-100 text-slate-600',
 }
 
+// Excel-compatible CSV export (BOM for UTF-8) of a BOQ and its items.
+const exportCsv = (boq: BOQ) => {
+  const rows: (string | number)[][] = [
+    ['BOQ', boq.boqNumber, 'Version', boq.version, 'Status', boq.status],
+    ['Project', boq.projectName, 'Customer', boq.customerName, 'Site', boq.siteName ?? ''],
+    [],
+    ['Code', 'Description', 'Category', 'Unit', 'Qty', 'Unit Cost', 'Total'],
+    ...(boq.items ?? []).map(i => [i.itemCode, i.description, i.category, i.unit, i.quantity, i.unitCost, i.totalCost]),
+    [],
+    ['', '', '', '', '', 'Subtotal', subtotalOf(boq)],
+    ['', '', '', '', '', `Contingency (${boq.contingencyPct}%)`, boq.contingency ?? 0],
+    ['', '', '', '', '', 'Grand Total', grandTotalOf(boq)],
+  ]
+  const csv = '\uFEFF' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${boq.boqNumber}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export function BOQModule() {
-  const { data: boqs, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<BOQ>(TABLES.boqs, 'BOQ')
+  const { user } = useAuth()
+  const { data: boqs, loading, error, openCreate, openEdit, remove, update, editable, modal } = useEntityCrud<BOQ>(TABLES.boqs, 'BOQ')
   const [selBOQ, setSelBOQ] = useState<BOQ | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   const totalValue = boqs.filter(b => b.status !== 'superseded').reduce((s, b) => s + grandTotalOf(b), 0)
+
+  const handleApprove = async () => {
+    if (!selBOQ || selBOQ.status === 'approved') return
+    if (!editable) {
+      setActionError('You do not have permission to approve BOQs')
+      return
+    }
+    try {
+      setActionError(null)
+      setBusy(true)
+      const approvedBy = user?.name ?? user?.email ?? 'Unknown'
+      const approvedAt = new Date().toISOString()
+      const row = await update(selBOQ.id!, { status: 'approved', approvedBy, approvedAt })
+      if (row) setSelBOQ(prev => prev ? { ...prev, status: 'approved', approvedBy, approvedAt } : prev)
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this BOQ?')) return
@@ -102,6 +148,7 @@ export function BOQModule() {
                 </div>
                 <div className="flex gap-3 flex-wrap">
                   <Button size="sm" variant="ghost" onClick={() => setSelBOQ(boq)}>View Details</Button>
+                  <Button size="sm" variant="ghost" icon={<Download className="w-3.5 h-3.5"/>} onClick={() => exportCsv(boq)}>Export</Button>
                   <Button size="sm" variant="secondary" icon={<Pencil className="w-3.5 h-3.5"/>} onClick={() => openEdit(boq)}>Edit</Button>
                   <Button size="sm" variant="danger" icon={<Trash2 className="w-3.5 h-3.5"/>} onClick={() => handleDelete(boq.id!)}>Delete</Button>
                   {boq.approvedBy && <p className="text-xs text-slate-400 self-center">Approved by {boq.approvedBy} · {boq.approvedAt}</p>}
@@ -166,8 +213,12 @@ export function BOQModule() {
               </table>
             </div>
             <div className="flex justify-end gap-3">
-              <Button variant="secondary" icon={<Download className="w-4 h-4"/>}>Export Excel</Button>
-              <Button>Approve BOQ</Button>
+              <Button variant="secondary" icon={<Download className="w-4 h-4"/>} onClick={() => exportCsv(selBOQ)}>Export Excel</Button>
+              {selBOQ.status === 'approved' ? (
+                <Button disabled>Approved ✓</Button>
+              ) : (
+                <Button disabled={busy} onClick={handleApprove}>Approve BOQ</Button>
+              )}
             </div>
           </div>
         </Modal>

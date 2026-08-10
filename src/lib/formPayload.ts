@@ -36,23 +36,37 @@ export function buildPayload(
       payload[f.key] = values[f.key] && typeof values[f.key] === 'object' ? values[f.key] : {}
     } else if (f.type === 'lineItems') {
       // JSONB line items — normalize numbers, drop fully-empty rows.
+      // Supports both shapes: finance (unitPrice/total) and BOQ (unitCost/totalCost).
       const toNum = (v: any) => {
         if (v === '' || v === undefined || v === null) return null
         const n = Number(v)
         return Number.isFinite(n) ? n : null
       }
       payload[f.key] = (Array.isArray(values[f.key]) ? values[f.key] : [])
-        .map((i: any) => ({
-          ...i,
-          quantity: toNum(i.quantity),
-          unitPrice: toNum(i.unitPrice),
-          total: (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0),
-        }))
+        .map((i: any) => {
+          // Normalize both shapes, then strip the BOQ keys from finance rows
+          // so quotes/invoices keep their exact payload shape.
+          const row: any = {
+            ...i,
+            quantity: toNum(i.quantity),
+            unitPrice: toNum(i.unitPrice),
+            unitCost: toNum(i.unitCost),
+            total: (Number(i.quantity) || 0) * (Number(i.unitPrice) || 0),
+            totalCost: (Number(i.quantity) || 0) * (Number(i.unitCost) || 0),
+          }
+          const hasCost = i.unitCost !== undefined && i.unitCost !== null && i.unitCost !== ''
+          if (!hasCost) {
+            delete row.unitCost
+            delete row.totalCost
+          }
+          return row
+        })
         .filter((i: any) =>
           String(i.description ?? '').trim() !== '' ||
           i.quantity != null ||
           String(i.unit ?? '').trim() !== '' ||
-          i.unitPrice != null
+          i.unitPrice != null ||
+          i.unitCost != null
         )
     } else if (f.type === 'number') {
       const v = values[f.key]

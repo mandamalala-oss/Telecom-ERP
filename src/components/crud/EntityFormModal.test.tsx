@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { EntityFormModal, pruneConditional, type FieldConfig } from './EntityFormModal'
+import { EntityFormModal, pruneConditional, applyDerived, type FieldConfig, type LineColumn } from './EntityFormModal'
 
 // vitest runs with globals:false, so RTL's auto-cleanup never registers —
 // unmount after every test or renders accumulate and queries go ambiguous.
@@ -429,6 +429,67 @@ describe('pruneConditional', () => {
   it('does not change values when inactive conditional fields are unset', () => {
     const v = { build: 'NSB', tech: 'MW', dish: '1m' }
     expect(pruneConditional(fields, v)).toEqual(v)
+  })
+})
+
+describe('applyDerived', () => {
+  const fields: FieldConfig[] = [
+    { key: 'items', label: 'Items', type: 'lineItems', derive: (v) => ({ subtotal: (v.items ?? []).reduce((s: number, i: any) => s + (Number(i.totalCost) || 0), 0) }) },
+    { key: 'subtotal', label: 'Subtotal', type: 'number' },
+  ]
+
+  it('merges derived values into the form values', () => {
+    expect(applyDerived(fields, { items: [{ totalCost: 500 }, { totalCost: 300 }] })).toEqual({
+      items: [{ totalCost: 500 }, { totalCost: 300 }],
+      subtotal: 800,
+    })
+  })
+
+  it('is a no-op when no field derives', () => {
+    const v = { a: 1 }
+    expect(applyDerived([], v)).toBe(v)
+  })
+})
+
+describe('EntityFormModal — BOQ (line items + derived totals)', () => {
+  const BOQ_COLUMNS: LineColumn[] = [
+    { key: 'itemCode', label: 'Code', span: 1 },
+    { key: 'description', label: 'Description', span: 3 },
+    { key: 'category', label: 'Category', span: 2, type: 'select', options: ['civil', 'supply'] },
+    { key: 'unit', label: 'Unit', span: 1 },
+    { key: 'quantity', label: 'Qty', span: 1, type: 'number' },
+    { key: 'unitCost', label: 'Unit Cost', span: 2, type: 'number' },
+  ]
+  const boqDerive = (v: Record<string, any>) => {
+    const subtotal = (v.items ?? []).reduce((s: number, i: any) => s + (Number(i.totalCost) || 0), 0)
+    const contingency = Math.round((subtotal * (Number(v.contingencyPct) || 0)) / 100)
+    return { subtotal, contingency, grandTotal: subtotal + contingency }
+  }
+  const BOQ_FIELDS: FieldConfig[] = [
+    { key: 'boqNumber', label: 'BOQ Number', type: 'text', required: true },
+    { key: 'items', label: 'Line Items', type: 'lineItems', lineColumns: BOQ_COLUMNS, derive: boqDerive },
+    { key: 'subtotal', label: 'Subtotal', type: 'number' },
+    { key: 'contingencyPct', label: 'Contingency %', type: 'number' },
+    { key: 'contingency', label: 'Contingency', type: 'number' },
+    { key: 'grandTotal', label: 'Grand Total', type: 'number' },
+  ]
+
+  it('renders the BOQ columns and derives totals from items + contingency', async () => {
+    const onSubmit = renderForm(BOQ_FIELDS)
+    await userEvent.type(screen.getByLabelText('BOQ Number'), 'BOQ-1')
+    await userEvent.click(screen.getByRole('button', { name: '+ Add line' }))
+    await userEvent.type(screen.getByPlaceholderText('Code'), 'C01')
+    await userEvent.type(screen.getByPlaceholderText('Description'), 'Concrete')
+    await userEvent.type(screen.getByPlaceholderText('Qty'), '2')
+    await userEvent.type(screen.getByPlaceholderText('Unit Cost'), '500')
+    await userEvent.type(screen.getByLabelText('Contingency %'), '10')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    const payload = onSubmit.mock.calls[0][0]
+    expect(payload.items[0]).toMatchObject({ itemCode: 'C01', description: 'Concrete', quantity: 2, unitCost: 500, totalCost: 1000 })
+    expect(payload.subtotal).toBe(1000)
+    expect(payload.contingency).toBe(100)
+    expect(payload.grandTotal).toBe(1100)
   })
 })
 
