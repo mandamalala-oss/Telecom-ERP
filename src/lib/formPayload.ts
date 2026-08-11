@@ -34,7 +34,7 @@ export function buildPayload(
     } else if (f.type === 'permissions') {
       // JSONB permission map — keep as a plain object (never a string).
       payload[f.key] = values[f.key] && typeof values[f.key] === 'object' ? values[f.key] : {}
-    } else if (f.type === 'lineItems') {
+    } else if (f.type === 'lineItems' || f.type === 'catalogItems') {
       // JSONB line items — normalize numbers, drop fully-empty rows.
       // Supports both shapes: finance (unitPrice/total) and BOQ (unitCost/totalCost).
       const toNum = (v: any) => {

@@ -208,6 +208,22 @@ export interface ATPRecord {
 // ─── BOQ MODULE ──────────────────────────────────────────────
 
 export type BOQStatus = 'draft' | 'submitted' | 'approved' | 'revised' | 'superseded'
+export type NetworkType = 'RAN' | 'MW'
+
+/** A row of the shared RAN/MW unit-price catalog (catalog_items). */
+export interface CatalogItem {
+  id: string
+  networkType: NetworkType
+  itemCode: string
+  description: string
+  comments?: string | null
+  unitCost: number
+  defaultQty: number
+  remarks?: string | null
+  category: string
+  unit: string
+  createdAt?: string
+}
 
 export interface BOQItem {
   id: string
@@ -237,6 +253,8 @@ export interface BOQ {
   contingency: number
   contingencyPct: number
   grandTotal: number
+  /** RAN | MW — required on new BOQs (nullable in the DB for pre-existing rows). */
+  networkType?: NetworkType
   approvedBy?: string
   approvedAt?: string
   createdBy: string

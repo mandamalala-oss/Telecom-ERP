@@ -26,6 +26,7 @@ export const TABLES = {
   atpTemplates: 'atp_templates',
   atpRecords: 'atp_records',
   boqs: 'boqs',
+  catalogItems: 'catalog_items',
   assets: 'assets',
   employees: 'employees',
   vehicles: 'vehicles',
@@ -373,18 +374,36 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'comments', label: 'Comments', type: 'textarea' },
   ],
   boqs: [
+    // RAN/MW toggle sits ABOVE everything else: it is required before the
+    // catalog item picker can be opened, and is saved onto the BOQ record.
+    { key: 'networkType', label: 'Network', type: 'select', options: ['RAN', 'MW'], chips: true, required: true },
     { key: 'boqNumber', label: 'BOQ Number', type: 'text', required: true, placeholder: 'BOQ-2026-001' },
     { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
     { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { customerId: 'id' } } },
     { key: 'siteName', label: 'Site', type: 'text' },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'submitted', 'approved', 'revised', 'superseded'] },
-    { key: 'items', label: 'Line Items', type: 'lineItems', lineColumns: BOQ_LINE_COLUMNS, derive: boqDerive },
+    // Items come from the catalog picker (catalogItems): manual row edit/delete
+    // stays, adding happens via ItemPickerModal gated on networkType.
+    { key: 'items', label: 'Line Items', type: 'catalogItems', lineColumns: BOQ_LINE_COLUMNS, derive: boqDerive, networkField: 'networkType' },
     { key: 'subtotal', label: 'Subtotal (Ar)', type: 'number' },
     { key: 'contingencyPct', label: 'Contingency %', type: 'number' },
     { key: 'contingency', label: 'Contingency (Ar)', type: 'number' },
     { key: 'grandTotal', label: 'Grand Total (Ar)', type: 'number' },
     { key: 'createdBy', label: 'Created By', type: 'text' },
     { key: 'notes', label: 'Notes', type: 'textarea' },
+  ],
+  // Read-only catalog: registered so the config↔schema invariant holds; not
+  // rendered by any module form (BOQ items are added through the picker).
+  catalog_items: [
+    { key: 'itemCode', label: 'Item Code', type: 'text' },
+    { key: 'description', label: 'Description', type: 'text' },
+    { key: 'networkType', label: 'Network', type: 'select', options: ['RAN', 'MW'] },
+    { key: 'unitCost', label: 'Unit Cost', type: 'number' },
+    { key: 'defaultQty', label: 'Default Qty', type: 'number' },
+    { key: 'category', label: 'Category', type: 'select', options: ['civil', 'supply', 'installation', 'integration', 'testing', 'pm', 'hse', 'other'] },
+    { key: 'unit', label: 'Unit', type: 'text' },
+    { key: 'comments', label: 'Comments', type: 'textarea' },
+    { key: 'remarks', label: 'Remarks', type: 'textarea' },
   ],
   assets: [
     { key: 'assetTag', label: 'Asset Tag', type: 'text', required: true },

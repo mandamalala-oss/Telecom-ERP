@@ -501,6 +501,7 @@ create table boqs (
   contingency         bigint default 0,
   contingency_pct     numeric(5,2) default 0,
   grand_total         bigint default 0,
+  network_type        network_type, -- RAN | MW (nullable: pre-existing BOQs stay NULL until re-saved)
   approved_by         text,
   approved_at         timestamptz,
   created_by          text,
@@ -509,6 +510,34 @@ create table boqs (
   notes               text,
   previous_version_id uuid
 );
+
+-- ─── BOQ CATALOG (item picker source) ───────────────────────────
+-- Shared RAN/MW unit-price catalog; BOQ items are picked from here.
+do $$
+begin
+  if not exists (select 1 from pg_type where typname = 'network_type') then
+    create type network_type as enum ('RAN', 'MW');
+  end if;
+end
+$$;
+
+create table catalog_items (
+  id           uuid primary key default gen_random_uuid(),
+  network_type network_type not null,
+  item_code    text not null,          -- SI, e.g. P394659
+  description  text not null,          -- NEW DESCRIPTION
+  comments     text,                   -- Comments column
+  unit_cost    numeric not null,       -- parsed from Contract, e.g. 400000
+  default_qty  numeric default 1,      -- QTY column, fallback 1
+  remarks      text,
+  category     text default 'other',   -- civil/supply/installation/integration/testing/pm/hse/other
+  unit         text default 'lot',
+  created_at   timestamptz default now()
+);
+
+create index idx_catalog_items_network on catalog_items (network_type);
+create index idx_catalog_items_search on catalog_items
+  using gin (to_tsvector('simple', item_code || ' ' || description));
 
 -- ─── ASSETS ─────────────────────────────────────────────────────
 create table assets (

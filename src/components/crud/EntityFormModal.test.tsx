@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { EntityFormModal, pruneConditional, applyDerived, type FieldConfig, type LineColumn } from './EntityFormModal'
@@ -585,5 +585,102 @@ describe('EntityFormModal — Scope of Work (conditional sections)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
     expect(onSubmit.mock.calls[0][0].scopeNsbRanItems).toEqual(['ANTENNA', 'RRU'])
+  })
+})
+
+describe('EntityFormModal — catalogItems picker wiring', () => {
+  const catalogRows = [
+    { id: 'c1', networkType: 'RAN', itemCode: 'P394659', description: 'Site Survey - Existing', unitCost: 400000, defaultQty: 1, category: 'supply', unit: 'lot' },
+    { id: 'c2', networkType: 'RAN', itemCode: 'P517294', description: 'Radio Access Installation - Type 1', unitCost: 1350000, defaultQty: 2, category: 'installation', unit: 'lot' },
+  ]
+  const CATALOG_FIELDS: FieldConfig[] = [
+    { key: 'networkType', label: 'Network', type: 'select', options: ['RAN', 'MW'], chips: true, required: true },
+    { key: 'boqNumber', label: 'BOQ Number', type: 'text', required: true },
+    { key: 'items', label: 'Line Items', type: 'catalogItems', lineColumns: [], derive: (v) => ({ subtotal: (v.items ?? []).reduce((s: number, i: any) => s + (Number(i.totalCost) || 0), 0) }) },
+  ]
+
+  beforeEach(() => {
+    mocks.makeApi.mockReturnValue({ list: async () => catalogRows })
+  })
+
+  it('saves the networkType chosen at the top of the form', async () => {
+    const onSubmit = renderForm(CATALOG_FIELDS)
+    await userEvent.click(screen.getByRole('button', { name: 'RAN' }))
+    await userEvent.type(screen.getByLabelText('BOQ Number'), 'BOQ-2026-001')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ networkType: 'RAN' })
+  })
+
+  it('keeps "Add from Catalog" disabled until a network is selected', async () => {
+    renderForm(CATALOG_FIELDS)
+    const addBtn = screen.getByRole('button', { name: 'Add from Catalog' })
+    expect((addBtn as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByText('Select Network (RAN/MW) above first.')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'RAN' }))
+    expect((screen.getByRole('button', { name: 'Add from Catalog' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('opens the picker with the selected network and appends picked items into the form', async () => {
+    const onSubmit = renderForm(CATALOG_FIELDS)
+    await userEvent.click(screen.getByRole('button', { name: 'RAN' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add from Catalog' }))
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Select P394659' }))
+    await userEvent.click(screen.getByRole('checkbox', { name: 'Select P517294' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add Selected (2)' }))
+
+    // Picker closes; the two rows are now in the form's line editor.
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'Select P394659' })).toBeNull())
+    await userEvent.type(screen.getByLabelText('BOQ Number'), 'BOQ-2026-001')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    const items = onSubmit.mock.calls[0][0].items
+    expect(items).toHaveLength(2)
+    expect(items[0]).toMatchObject({ itemCode: 'P394659', quantity: 1, unitCost: 400000, totalCost: 400000 })
+    expect(items[1]).toMatchObject({ itemCode: 'P517294', quantity: 2, unitCost: 1350000, totalCost: 2700000 })
+  })
+
+  it('asks on duplicate itemCode: OK (default) adds a second line', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const onSubmit = renderForm(CATALOG_FIELDS, {
+      items: [{ id: 'x1', itemCode: 'P394659', description: 'Site Survey - Existing', unit: 'lot', quantity: 1, unitCost: 400000, totalCost: 400000, category: 'supply' }],
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'RAN' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add from Catalog' }))
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Select P394659' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add Selected (1)' }))
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining('P394659')))
+    await userEvent.type(screen.getByLabelText('BOQ Number'), 'BOQ-2026-001')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0].items).toHaveLength(2)
+    confirmSpy.mockRestore()
+  })
+
+  it('asks on duplicate itemCode: Cancel merges quantities into the existing line', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    const onSubmit = renderForm(CATALOG_FIELDS, {
+      items: [{ id: 'x1', itemCode: 'P394659', description: 'Site Survey - Existing', unit: 'lot', quantity: 1, unitCost: 400000, totalCost: 400000, category: 'supply' }],
+    })
+    await userEvent.click(screen.getByRole('button', { name: 'RAN' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add from Catalog' }))
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Select P394659' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Add Selected (1)' }))
+    await waitFor(() => expect(confirmSpy).toHaveBeenCalled())
+    await userEvent.type(screen.getByLabelText('BOQ Number'), 'BOQ-2026-001')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    const items = onSubmit.mock.calls[0][0].items
+    expect(items).toHaveLength(1)
+    expect(items[0]).toMatchObject({ itemCode: 'P394659', quantity: 2, totalCost: 800000 })
+    confirmSpy.mockRestore()
+  })
+
+  it('blocks submit until networkType is chosen (required)', async () => {
+    const onSubmit = renderForm(CATALOG_FIELDS)
+    await userEvent.type(screen.getByLabelText('BOQ Number'), 'BOQ-2026-001')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Please fill in: Network')).toBeTruthy()
+    expect(onSubmit).not.toHaveBeenCalled()
   })
 })

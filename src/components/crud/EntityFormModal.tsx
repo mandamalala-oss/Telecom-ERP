@@ -1,13 +1,15 @@
 import { Fragment, useEffect, useState, type FormEvent } from 'react'
-import { X, Plus } from 'lucide-react'
+import { X, Plus, Library } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { makeApi } from '@/lib/api/crud'
 import { buildPayload } from '@/lib/formPayload'
 import { PERMISSION_MODULES } from '@/types'
+import { ItemPickerModal } from './ItemPickerModal'
+import type { BOQItem, NetworkType } from '@/types/v2'
 
-export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect' | 'sitePicker' | 'permissions' | 'lineItems'
+export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect' | 'sitePicker' | 'permissions' | 'lineItems' | 'catalogItems'
 
 export interface LookupConfig {
   /** Table to load options from (TABLES value, e.g. 'sites'). */
@@ -57,6 +59,9 @@ export interface FieldConfig {
   section?: string
   /** Custom columns for a `lineItems` editor (default: the finance columns). */
   lineColumns?: LineColumn[]
+  /** `catalogItems`: form field holding the network type ('RAN' | 'MW') that
+   * gates the picker — the button stays disabled until it has a value. */
+  networkField?: string
   /** Compute derived values (e.g. totals) after any value change — merged
    * into the form values, so derived fields are never stale. */
   derive?: (values: Record<string, any>) => Record<string, any>
@@ -138,6 +143,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lookupOptions, setLookupOptions] = useState<Record<string, any[]>>({})
+  const [pickerNetwork, setPickerNetwork] = useState<NetworkType | null>(null)
 
   // Re-seed values every time the modal OPENS, from the current `initial`:
   // New always starts blank and a reopened record shows the latest saved
@@ -221,7 +227,50 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   }
   const removeLine = (f: FieldConfig, idx: number) =>
     applyLineTotals(f, (values[f.key] ?? []).filter((_: any, i: number) => i !== idx))
+
+  // ── Catalog item picker (catalogItems field type) ─────────────────────────
+  // Items are added exclusively through ItemPickerModal — the unit price comes
+  // from the catalog and is NOT user-editable. Rows already in the list stay
+  // manually editable/deletable. The picker is gated on the network field
+  // (RAN | MW) so the catalog subset is always known before it can open.
+  const catalogNetwork = (f: FieldConfig) =>
+    values[f.networkField ?? 'networkType'] as NetworkType | undefined
+  const canOpenCatalog = (f: FieldConfig) =>
+    catalogNetwork(f) === 'RAN' || catalogNetwork(f) === 'MW'
+
+  const openCatalogPicker = (f: FieldConfig) => {
+    const network = catalogNetwork(f)
+    if (network !== 'RAN' && network !== 'MW') return
+    setPickerNetwork(network)
+  }
+
+  const handleCatalogAdd = (f: FieldConfig, picked: BOQItem[]) => {
+    const items = [...(values[f.key] ?? [])]
+    for (const p of picked) {
+      const existingIdx = items.findIndex((i: any) => i.itemCode === p.itemCode)
+      if (existingIdx < 0) {
+        items.push({ ...p, id: lineId() })
+        continue
+      }
+      // Same catalog item picked twice: ask. OK (default) = add as a second
+      // line; Cancel = sum the quantities into the existing line.
+      const asSecondLine = window.confirm(
+        `"${p.itemCode}" is already in the list.\n\nOK = add as a second line (default)\nCancel = merge quantities into the existing line`
+      )
+      if (asSecondLine) {
+        items.push({ ...p, id: lineId() })
+      } else {
+        const existing = items[existingIdx]
+        const quantity = (Number(existing.quantity) || 0) + p.quantity
+        items[existingIdx] = { ...existing, quantity }
+        // totalCost is recomputed below by applyLineTotals.
+      }
+    }
+    applyLineTotals(f, items)
+  }
+
   const itemsField = fields.find((x) => x.type === 'lineItems')
+  const catalogField = fields.find((x) => x.type === 'catalogItems')
 
   // Module-supplied rows (projects, sites, project_sites…) take precedence
   // over the auto-fetched lookup options.
@@ -470,7 +519,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                     })}
                   </div>
                 </div>
-              ) : f.type === 'lineItems' ? (
+              ) : f.type === 'lineItems' || f.type === 'catalogItems' ? (
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</p>
                   <div className="rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-700">
@@ -498,7 +547,18 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                       </div>
                     ))}
                     <div className="px-3 py-2">
-                      <Button type="button" variant="secondary" onClick={() => addLine(f)}>+ Add line</Button>
+                      {f.type === 'catalogItems' ? (
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button type="button" variant="secondary" icon={<Library className="w-4 h-4" />} onClick={() => openCatalogPicker(f)} disabled={!canOpenCatalog(f)}>
+                            Add from Catalog
+                          </Button>
+                          {!canOpenCatalog(f) && (
+                            <span className="text-xs text-amber-600">Select Network (RAN/MW) above first.</span>
+                          )}
+                        </div>
+                      ) : (
+                        <Button type="button" variant="secondary" onClick={() => addLine(f)}>+ Add line</Button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -527,6 +587,14 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
           })}
         </div>
       </form>
+
+      {pickerNetwork && catalogField && (
+        <ItemPickerModal
+          networkType={pickerNetwork}
+          onAdd={(items) => handleCatalogAdd(catalogField, items)}
+          onClose={() => setPickerNetwork(null)}
+        />
+      )}
     </Modal>
   )
 }
@@ -538,7 +606,7 @@ function buildInitial(fields: FieldConfig[], initial?: Record<string, any>) {
     if (f.type === 'tags') out[f.key] = Array.isArray(v) ? v.join(', ') : (v ?? '')
     else if (f.type === 'multiSelect') out[f.key] = Array.isArray(v) ? [...v] : []
     else if (f.type === 'permissions') out[f.key] = v && typeof v === 'object' ? { ...v } : {}
-    else if (f.type === 'lineItems') out[f.key] = Array.isArray(v) ? v.map((i: any) => ({ ...i })) : []
+    else if (f.type === 'lineItems' || f.type === 'catalogItems') out[f.key] = Array.isArray(v) ? v.map((i: any) => ({ ...i })) : []
     else if (f.type === 'date' && typeof v === 'string') out[f.key] = v.slice(0, 10)
     else out[f.key] = v ?? (f.type === 'checkbox' ? false : '')
   }
