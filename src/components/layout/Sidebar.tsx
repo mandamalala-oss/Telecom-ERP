@@ -9,7 +9,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useState } from 'react'
 
 interface NavItem {
-  to: string; label: string; icon: React.ReactNode; module: string; badge?: string; isNew?: boolean
+  to: string; label: string; icon: React.ReactNode; module: string; badge?: string
 }
 interface NavGroup {
   label: string; items: NavItem[]
@@ -19,20 +19,20 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'TELECOM OPS',
     items: [
-      { to: '/telecom-dashboard', label: 'Telecom Dashboard', icon: <LayoutDashboard className="w-4 h-4" />, module: 'dashboard', isNew: true },
-      { to: '/field-ops',         label: 'Field Operations',  icon: <HardHat        className="w-4 h-4" />, module: 'projects',  isNew: true },
-      { to: '/atp',               label: 'ATP Management',    icon: <ClipboardCheck  className="w-4 h-4" />, module: 'projects',  isNew: true },
-      { to: '/boq',               label: 'BOQ Management',    icon: <FileText        className="w-4 h-4" />, module: 'finance',   isNew: true },
-      { to: '/assets',            label: 'Asset Traceability',icon: <Package         className="w-4 h-4" />, module: 'inventory', isNew: true },
+      { to: '/telecom-dashboard', label: 'Telecom Dashboard', icon: <LayoutDashboard className="w-4 h-4" />, module: 'dashboard' },
+      { to: '/field-ops',         label: 'Field Operations',  icon: <HardHat        className="w-4 h-4" />, module: 'projects' },
+      { to: '/atp',               label: 'ATP Management',    icon: <ClipboardCheck  className="w-4 h-4" />, module: 'projects' },
+      { to: '/boq',               label: 'BOQ Management',    icon: <FileText        className="w-4 h-4" />, module: 'finance' },
+      { to: '/assets',            label: 'Asset Traceability',icon: <Package         className="w-4 h-4" />, module: 'inventory' },
     ],
   },
   {
     label: 'WORKFORCE',
     items: [
-      { to: '/resources',         label: 'Resource Mgmt',     icon: <Wrench          className="w-4 h-4" />, module: 'dashboard', isNew: true },
-      { to: '/procurement',       label: 'Procurement',       icon: <ShoppingCart    className="w-4 h-4" />, module: 'finance',   isNew: true },
-      { to: '/subcontractors',    label: 'Subcontractors',    icon: <Award           className="w-4 h-4" />, module: 'dashboard', isNew: true },
-      { to: '/documents',         label: 'Documents (DMS)',   icon: <FolderOpen      className="w-4 h-4" />, module: 'dashboard', isNew: true },
+      { to: '/resources',         label: 'Resource Mgmt',     icon: <Wrench          className="w-4 h-4" />, module: 'dashboard' },
+      { to: '/procurement',       label: 'Procurement',       icon: <ShoppingCart    className="w-4 h-4" />, module: 'finance' },
+      { to: '/subcontractors',    label: 'Subcontractors',    icon: <Award           className="w-4 h-4" />, module: 'dashboard' },
+      { to: '/documents',         label: 'Documents (DMS)',   icon: <FolderOpen      className="w-4 h-4" />, module: 'dashboard' },
     ],
   },
   {
@@ -113,11 +113,6 @@ export function Sidebar({ mobile, onClose }: SidebarProps) {
                 >
                   {item.icon}
                   <span className="flex-1 text-sm">{item.label}</span>
-                  {item.isNew && (
-                    <span className="bg-brand-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold leading-none">
-                      NEW
-                    </span>
-                  )}
                   {item.badge && (
                     <span className="bg-slate-600 text-slate-200 text-xs px-1.5 py-0.5 rounded-full font-bold">
                       {item.badge}

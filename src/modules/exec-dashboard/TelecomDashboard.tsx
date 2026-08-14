@@ -1,5 +1,10 @@
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, ReferenceLine } from 'recharts'
+import { type ReactNode } from 'react'
+import {
+  FolderKanban, RefreshCw, CheckCircle2, AlertTriangle, Target,
+  Ruler, MapPin, Wrench, Radar, CircleDot,
+} from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { useEntity } from '@/lib/hooks/useEntity'
 import { TABLES } from '@/lib/api/entityConfigs'
@@ -12,17 +17,21 @@ const pct  = (n: number, dec = 1) => `${(n??0).toFixed(dec)}%`
 
 interface KPITileProps {
   label: string; value: string | number; sub?: string
-  color: 'blue'|'green'|'amber'|'red'|'purple'|'cyan'; icon: string
+  color: 'blue'|'cyan'|'green'|'amber'|'red'|'orange'|'violet'|'sky'|'emerald'
+  icon: ReactNode
   alert?: boolean
 }
 
 const COLORS = {
-  blue:  { bg:'bg-blue-50 dark:bg-blue-900/20',   txt:'text-blue-700 dark:text-blue-300',   icon:'bg-blue-100 dark:bg-blue-900/40 text-blue-600' },
-  green: { bg:'bg-green-50 dark:bg-green-900/20', txt:'text-green-700 dark:text-green-300', icon:'bg-green-100 dark:bg-green-900/40 text-green-600' },
-  amber: { bg:'bg-amber-50 dark:bg-amber-900/20', txt:'text-amber-700 dark:text-amber-300', icon:'bg-amber-100 dark:bg-amber-900/40 text-amber-600' },
-  red:   { bg:'bg-red-50 dark:bg-red-900/20',     txt:'text-red-700 dark:text-red-300',     icon:'bg-red-100 dark:bg-red-900/40 text-red-600' },
-  purple:{ bg:'bg-purple-50 dark:bg-purple-900/20',txt:'text-purple-700 dark:text-purple-300',icon:'bg-purple-100 dark:bg-purple-900/40 text-purple-600' },
-  cyan:  { bg:'bg-cyan-50 dark:bg-cyan-900/20',   txt:'text-cyan-700 dark:text-cyan-300',   icon:'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-600' },
+  blue:    { bg:'bg-blue-50 dark:bg-blue-900/20',     txt:'text-blue-700 dark:text-blue-300',     icon:'bg-blue-100 dark:bg-blue-900/40 text-blue-500' },
+  cyan:    { bg:'bg-cyan-50 dark:bg-cyan-900/20',     txt:'text-cyan-700 dark:text-cyan-300',     icon:'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-500' },
+  green:   { bg:'bg-green-50 dark:bg-green-900/20',   txt:'text-green-700 dark:text-green-300',   icon:'bg-green-100 dark:bg-green-900/40 text-green-500' },
+  amber:   { bg:'bg-amber-50 dark:bg-amber-900/20',   txt:'text-amber-700 dark:text-amber-300',   icon:'bg-amber-100 dark:bg-amber-900/40 text-amber-500' },
+  red:     { bg:'bg-red-50 dark:bg-red-900/20',       txt:'text-red-700 dark:text-red-300',       icon:'bg-red-100 dark:bg-red-900/40 text-red-500' },
+  orange:  { bg:'bg-orange-50 dark:bg-orange-900/20', txt:'text-orange-700 dark:text-orange-300', icon:'bg-orange-100 dark:bg-orange-900/40 text-orange-500' },
+  violet:  { bg:'bg-violet-50 dark:bg-violet-900/20', txt:'text-violet-700 dark:text-violet-300', icon:'bg-violet-100 dark:bg-violet-900/40 text-violet-500' },
+  sky:     { bg:'bg-sky-50 dark:bg-sky-900/20',       txt:'text-sky-700 dark:text-sky-300',       icon:'bg-sky-100 dark:bg-sky-900/40 text-sky-500' },
+  emerald: { bg:'bg-emerald-50 dark:bg-emerald-900/20',txt:'text-emerald-700 dark:text-emerald-300',icon:'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-500' },
 }
 
 function KPITile({ label, value, sub, color, icon, alert }: KPITileProps) {
@@ -118,11 +127,11 @@ export function TelecomDashboard() {
       <div>
         <SectionHeader title="Project KPIs" subtitle="Live project status" />
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
-          <KPITile label="Total Projects"  value={kpi.totalProjects}    icon="📁" color="blue"   />
-          <KPITile label="In Progress"     value={kpi.inProgressProjects} icon="🔄" color="cyan"   />
-          <KPITile label="Completed"       value={kpi.completedProjects} icon="✅" color="green"  />
-          <KPITile label="On Hold"         value={kpi.delayedProjects}  icon="⚠️" color={kpi.delayedProjects>0?'red':'green'} alert={kpi.delayedProjects>0} />
-          <KPITile label="On Track"        value={kpi.projectsOnTrack}  icon="🎯" color="green"  />
+          <KPITile label="Total Projects"  value={kpi.totalProjects}    icon={<FolderKanban className="w-5 h-5" />}  color="blue"  />
+          <KPITile label="In Progress"     value={kpi.inProgressProjects} icon={<RefreshCw className="w-5 h-5" />}    color="cyan"  />
+          <KPITile label="Completed"       value={kpi.completedProjects} icon={<CheckCircle2 className="w-5 h-5" />}  color="green" />
+          <KPITile label="On Hold"         value={kpi.delayedProjects}  icon={<AlertTriangle className="w-5 h-5" />} color="amber" alert={kpi.delayedProjects>0} />
+          <KPITile label="On Track"        value={kpi.projectsOnTrack}  icon={<Target className="w-5 h-5" />}        color="red"   />
         </div>
       </div>
 
@@ -147,12 +156,12 @@ export function TelecomDashboard() {
             </Card>
           </div>
           <div className="grid grid-cols-2 gap-3 content-start">
-            <KPITile label="Planned"    value={kpi.sitesPlanned}    icon="📐" color="blue"   />
-            <KPITile label="Surveyed"   value={kpi.sitesSurveyed}   icon="📍" color="cyan"   />
-            <KPITile label="Installed"  value={kpi.sitesInstalled}  icon="🏗️" color="amber"  />
-            <KPITile label="Integrated" value={kpi.sitesIntegrated} icon="📡" color="purple" />
-            <KPITile label="Accepted"   value={kpi.sitesAccepted}   icon="✅" color="green"  />
-            <KPITile label="Live"       value={kpi.sitesLive}       icon="🟢" color="green"  sub="In service" />
+            <KPITile label="Planned"    value={kpi.sitesPlanned}    icon={<Ruler className="w-5 h-5" />}       color="sky"     />
+            <KPITile label="Surveyed"   value={kpi.sitesSurveyed}   icon={<MapPin className="w-5 h-5" />}       color="red"     />
+            <KPITile label="Installed"  value={kpi.sitesInstalled}  icon={<Wrench className="w-5 h-5" />}       color="orange"  />
+            <KPITile label="Integrated" value={kpi.sitesIntegrated} icon={<Radar className="w-5 h-5" />}        color="violet"  />
+            <KPITile label="Accepted"   value={kpi.sitesAccepted}   icon={<CheckCircle2 className="w-5 h-5" />} color="green"   />
+            <KPITile label="Live"       value={kpi.sitesLive}       icon={<CircleDot className="w-5 h-5" />}    color="emerald" sub="In service" />
           </div>
         </div>
       </div>
