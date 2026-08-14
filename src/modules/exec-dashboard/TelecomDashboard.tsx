@@ -72,7 +72,7 @@ export function TelecomDashboard() {
 
   const kpi = {
     totalProjects: projects.length,
-    activeProjects: projects.filter(p => p.status === 'in_progress').length,
+    inProgressProjects: projects.filter(p => p.status === 'in_progress').length,
     completedProjects: projects.filter(p => p.status === 'completed').length,
     delayedProjects: projects.filter(p => p.status === 'on_hold').length,
     projectsOnTrack: projects.filter(p => p.status === 'in_progress' && (p.progress ?? 0) >= 50).length,
@@ -119,7 +119,7 @@ export function TelecomDashboard() {
         <SectionHeader title="Project KPIs" subtitle="Live project status" />
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3">
           <KPITile label="Total Projects"  value={kpi.totalProjects}    icon="📁" color="blue"   />
-          <KPITile label="Active"          value={kpi.activeProjects}   icon="🔄" color="cyan"   />
+          <KPITile label="In Progress"     value={kpi.inProgressProjects} icon="🔄" color="cyan"   />
           <KPITile label="Completed"       value={kpi.completedProjects} icon="✅" color="green"  />
           <KPITile label="On Hold"         value={kpi.delayedProjects}  icon="⚠️" color={kpi.delayedProjects>0?'red':'green'} alert={kpi.delayedProjects>0} />
           <KPITile label="On Track"        value={kpi.projectsOnTrack}  icon="🎯" color="green"  />

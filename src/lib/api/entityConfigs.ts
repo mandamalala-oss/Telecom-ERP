@@ -358,14 +358,14 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   atp_templates: [
     { key: 'name', label: 'Name', type: 'text', required: true },
     { key: 'version', label: 'Version', type: 'text' },
-    { key: 'customer', label: 'Customer', type: 'text' },
+    { key: 'customer', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
     { key: 'technologies', label: 'Technologies', type: 'tags' },
     { key: 'isActive', label: 'Active', type: 'checkbox' },
   ],
   atp_records: [
     { key: 'atpNumber', label: 'ATP Number', type: 'text', required: true, placeholder: 'ATP-2026-001' },
+    { key: 'siteCode', label: 'Site Code', type: 'select', lookup: { table: 'sites', valueKey: 'siteId', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId', populate: { siteName: 'name', siteId: 'id' } } },
     { key: 'siteName', label: 'Site Name', type: 'text' },
-    { key: 'siteCode', label: 'Site Code', type: 'text' },
     { key: 'templateName', label: 'Template', type: 'select', lookup: { table: 'atp_templates', valueKey: 'name', labelKey: 'name' } },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'submitted', 'reviewed', 'approved', 'customer_accepted', 'failed'] },
     { key: 'overallResult', label: 'Overall Result', type: 'select', options: ['pass', 'fail', 'partial'] },
@@ -380,7 +380,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'boqNumber', label: 'BOQ Number', type: 'text', required: true, placeholder: 'BOQ-2026-001' },
     { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
     { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { customerId: 'id' } } },
-    { key: 'siteName', label: 'Site', type: 'text' },
+    { key: 'siteName', label: 'Site', type: 'select', lookup: { table: 'sites', valueKey: 'name', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId', populate: { siteId: 'id' } } },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'submitted', 'approved', 'revised', 'superseded'] },
     // Items come from the catalog picker (catalogItems): manual row edit/delete
     // stays, adding happens via ItemPickerModal gated on networkType.
