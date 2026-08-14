@@ -684,3 +684,35 @@ describe('EntityFormModal — catalogItems picker wiring', () => {
     expect(onSubmit).not.toHaveBeenCalled()
   })
 })
+
+describe('EntityFormModal — lookup filter (field-op crew)', () => {
+  const empRows = [
+    { id: 'e1', name: 'Alice Leader', role: 'team_leader' },
+    { id: 'e2', name: 'Bob Tech', role: 'technician' },
+    { id: 'e3', name: 'Carl Rigger', role: 'rigger' },
+    { id: 'e4', name: 'Dana Driver', role: 'driver' },
+  ]
+  const fields: FieldConfig[] = [
+    { key: 'teamLeaderId', label: 'Team Leader', type: 'select', lookup: { table: 'employees', valueKey: 'id', labelKey: 'name', labelFormat: '{name} ({role})', orderBy: 'name', filter: (r: any) => r.role === 'team_leader' } },
+    { key: 'riggerId', label: 'Rigger', type: 'select', lookup: { table: 'employees', valueKey: 'id', labelKey: 'name', labelFormat: '{name} ({role})', orderBy: 'name', filter: (r: any) => r.role === 'rigger' } },
+  ]
+
+  it('scopes each dropdown to its role via lookup.filter', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => empRows })
+    renderForm(fields)
+    const leader = await screen.findByLabelText('Team Leader') as HTMLSelectElement
+    const rigger = screen.getByLabelText('Rigger') as HTMLSelectElement
+    const opts = (el: HTMLSelectElement) => Array.from(el.querySelectorAll('option')).map((o) => o.textContent)
+    expect(opts(leader)).toEqual(['Select…', 'Alice Leader (team_leader)'])
+    expect(opts(rigger)).toEqual(['Select…', 'Carl Rigger (rigger)'])
+  })
+
+  it('crew fields are optional — saves with a partial team', async () => {
+    mocks.makeApi.mockReturnValue({ list: async () => empRows })
+    const onSubmit = renderForm(fields)
+    await userEvent.selectOptions(await screen.findByLabelText('Team Leader'), 'e1')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ teamLeaderId: 'e1', riggerId: '' })
+  })
+})

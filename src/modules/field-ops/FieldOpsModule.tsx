@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
+import { useEntity } from '@/lib/hooks/useEntity'
 import { TABLES } from '@/lib/api/entityConfigs'
-import type { SurveyReport, InstallationRecord, IntegrationRecord, SurveyStatus, InstallStatus } from '@/types/v2'
+import type { SurveyReport, InstallationRecord, IntegrationRecord, SurveyStatus, InstallStatus, Employee, Vehicle } from '@/types/v2'
 import { clsx } from 'clsx'
 
 type Tab = 'survey' | 'installation' | 'integration'
@@ -49,9 +50,23 @@ function Stepper({ steps, current }: { steps: { id: string; label: string }[]; c
 
 export function FieldOpsModule() {
   const [tab, setTab] = useState<Tab>('survey')
-  const { data: surveys, error: survErr, openCreate: newSurvey, openEdit: editSurvey, remove: removeSurvey, modal: surveyModal } = useEntityCrud<SurveyReport>(TABLES.surveyReports, 'Survey')
-  const { data: installs, error: instErr, openCreate: newInstall, openEdit: editInstall, remove: removeInstall, modal: installModal } = useEntityCrud<InstallationRecord>(TABLES.installationRecords, 'Installation Record')
-  const { data: integs, error: integErr, openCreate: newInteg, openEdit: editInteg, remove: removeInteg, modal: integModal } = useEntityCrud<IntegrationRecord>(TABLES.integrationRecords, 'Integration Record')
+  // Resource Mgmt rows: resolve crew/vehicle names + flip status on assignment.
+  const empRes = useEntity<Employee>(TABLES.employees)
+  const vehRes = useEntity<Vehicle>(TABLES.vehicles)
+
+  // Once a crew member/vehicle is attached to a field operation, mark it
+  // assigned/in-use so Resource Mgmt no longer shows it as available.
+  const assignResources = async (_row: unknown, values: Record<string, any>) => {
+    const empIds = [values.teamLeaderId, values.technicianId, values.riggerId, values.driverId].filter(Boolean)
+    await Promise.all([
+      ...empIds.map((id: string) => empRes.update(id, { status: 'assigned' })),
+      ...(values.vehicleId ? [vehRes.update(values.vehicleId, { status: 'in_use' })] : []),
+    ])
+  }
+
+  const { data: surveys, error: survErr, openCreate: newSurvey, openEdit: editSurvey, remove: removeSurvey, modal: surveyModal } = useEntityCrud<SurveyReport>(TABLES.surveyReports, 'Survey', undefined, assignResources, undefined, assignResources)
+  const { data: installs, error: instErr, openCreate: newInstall, openEdit: editInstall, remove: removeInstall, modal: installModal } = useEntityCrud<InstallationRecord>(TABLES.installationRecords, 'Installation Record', undefined, assignResources, undefined, assignResources)
+  const { data: integs, error: integErr, openCreate: newInteg, openEdit: editInteg, remove: removeInteg, modal: integModal } = useEntityCrud<IntegrationRecord>(TABLES.integrationRecords, 'Integration Record', undefined, assignResources, undefined, assignResources)
   const [selSurvey, setSelSurvey] = useState<SurveyReport | null>(null)
   const [selInstall, setSelInstall] = useState<InstallationRecord | null>(null)
   const [selInteg, setSelInteg] = useState<IntegrationRecord | null>(null)
@@ -89,6 +104,32 @@ export function FieldOpsModule() {
     } catch (e: any) {
       setActionError(e.message ?? String(e))
     }
+  }
+
+  // ── Crew/vehicle name resolution + display ──────────────────────────────
+  const empName = (id?: string) => (id ? (empRes.data.find((e) => e.id === id)?.name ?? id.slice(0, 8)) : null)
+  const vehLabel = (id?: string) => {
+    const v = vehRes.data.find((x) => x.id === id)
+    return v ? [v.registration, v.make, v.model].filter(Boolean).join(' ') : null
+  }
+  const crewSize = (r: any) => [r.teamLeaderId, r.technicianId, r.riggerId, r.driverId].filter(Boolean).length
+  const renderCrew = (r: any) => {
+    const crew = (['Team Leader', 'Technician', 'Rigger', 'Driver'] as const)
+      .map((label, i) => [label, [r.teamLeaderId, r.technicianId, r.riggerId, r.driverId][i]] as [string, string])
+      .filter(([, id]) => id)
+    const veh = r.vehicleId ? vehLabel(r.vehicleId) : null
+    if (crew.length === 0 && !veh) return null
+    return (
+      <div className="bg-slate-50 dark:bg-slate-700/30 rounded-lg p-3">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Team & Vehicle</p>
+        <div className="flex flex-wrap gap-x-6 gap-y-2">
+          {crew.map(([label, id]) => (
+            <div key={label}><p className="text-xs text-slate-400">{label}</p><p className="text-sm font-semibold text-slate-900 dark:text-white">{empName(id)}</p></div>
+          ))}
+          {veh && <div><p className="text-xs text-slate-400">Vehicle</p><p className="text-sm font-semibold text-slate-900 dark:text-white">{veh}</p></div>}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -154,7 +195,7 @@ export function FieldOpsModule() {
               <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-700 text-xs">
                 <div><p className="text-slate-400">Equipment</p><p className="font-semibold">{(ins.equipmentInstalled??[]).length}</p></div>
                 <div><p className="text-slate-400">Punch List</p><p className={clsx('font-semibold', (ins.punchList??[]).filter(p=>p.status==='open').length>0?'text-amber-600':'text-green-600')}>{(ins.punchList??[]).filter(p=>p.status==='open').length} open</p></div>
-                <div><p className="text-slate-400">Team</p><p className="font-semibold">{(ins.team??[]).length}</p></div>
+                <div><p className="text-slate-400">Team</p><p className="font-semibold">{crewSize(ins)}</p></div>
               </div>
             </Card>
           ))}
@@ -193,9 +234,11 @@ export function FieldOpsModule() {
           }>
           <div className="space-y-4">
             <Stepper steps={SURVEY_FLOW} current={selSurvey.status} />
+            {renderCrew(selSurvey)}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
                 {l:'Site Code',v:selSurvey.siteCode},{l:'Scheduled',v:selSurvey.scheduledDate},
+                {l:'Project',v:selSurvey.projectName ?? '—'},
                 {l:'Tower Type',v:selSurvey.towerType},{l:'Height',v:`${selSurvey.towerHeight}m`},
                 {l:'Power',v:selSurvey.powerSource},{l:'Transmission',v:selSurvey.transmissionType?.toUpperCase()},
                 {l:'Accessibility',v:selSurvey.accessibility},{l:'Shelter',v:selSurvey.shelterAvailable?'Yes':'No'},
@@ -241,6 +284,7 @@ export function FieldOpsModule() {
           }>
           <div className="space-y-4">
             <Stepper steps={INSTALL_FLOW} current={selInstall.status} />
+            {renderCrew(selInstall)}
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Equipment Installed ({(selInstall.equipmentInstalled??[]).length})</p>
               {(selInstall.equipmentInstalled??[]).map(eq => (
@@ -279,6 +323,7 @@ export function FieldOpsModule() {
           }>
           <div className="space-y-4">
             <Stepper steps={INTEG_FLOW} current={selInteg.status} />
+            {renderCrew(selInteg)}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[{l:'BBU Model',v:selInteg.bbuModel},{l:'BBU Serial',v:selInteg.bbuSerial},{l:'MW Link',v:selInteg.mwLink??'—'},{l:'Frequency',v:selInteg.mwFrequency??'—'},{l:'IP Address',v:selInteg.ipAddress??'—'},{l:'VLAN',v:selInteg.vlanId??'—'}].map(item=>(
                 <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3"><p className="text-xs text-slate-500 font-semibold uppercase">{item.l}</p><p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{item.v}</p></div>

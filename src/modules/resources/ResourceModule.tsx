@@ -15,6 +15,7 @@ const ROLE_LABEL: Record<string, string> = {
   civil_engineer:'Civil Engineer', rf_engineer:'RF Engineer',
   mw_engineer:'MW Engineer', integration_engineer:'Integration Engineer',
   hse_officer:'HSE Officer', driver:'Driver', helper:'Helper',
+  team_leader:'Team Leader', technician:'Technician',
 }
 
 const STATUS_COLOR: Record<string, string> = {

@@ -37,8 +37,15 @@ export interface SurveyReport {
   siteCode: string
   siteName: string
   projectId: string
+  projectName?: string
   status: SurveyStatus
   assignedTo: string[]
+  // Crew + vehicle assigned from Resource Mgmt (all optional).
+  teamLeaderId?: string
+  technicianId?: string
+  riggerId?: string
+  driverId?: string
+  vehicleId?: string
   scheduledDate: string
   startedAt?: string
   completedAt?: string
@@ -77,7 +84,13 @@ export interface InstallationRecord {
   projectName?: string
   status: InstallStatus
   team: string[]
-  supervisorId: string
+  supervisorId?: string
+  // Crew + vehicle assigned from Resource Mgmt (all optional).
+  teamLeaderId?: string
+  technicianId?: string
+  riggerId?: string
+  driverId?: string
+  vehicleId?: string
   materialDeliveredAt?: string
   startedAt?: string
   completedAt?: string
@@ -110,7 +123,13 @@ export interface IntegrationRecord {
   siteName?: string
   projectName?: string
   status: IntegrationStatus
-  engineerId: string
+  engineerId?: string
+  // Crew + vehicle assigned from Resource Mgmt (all optional).
+  teamLeaderId?: string
+  technicianId?: string
+  riggerId?: string
+  driverId?: string
+  vehicleId?: string
   startedAt?: string
   completedAt?: string
   acceptedAt?: string
@@ -311,7 +330,7 @@ export interface Asset {
 
 // ─── RESOURCES ───────────────────────────────────────────────
 
-export type EmployeeRole = 'pm' | 'supervisor' | 'rigger' | 'civil_engineer' | 'rf_engineer' | 'mw_engineer' | 'integration_engineer' | 'hse_officer' | 'driver' | 'helper'
+export type EmployeeRole = 'pm' | 'supervisor' | 'rigger' | 'civil_engineer' | 'rf_engineer' | 'mw_engineer' | 'integration_engineer' | 'hse_officer' | 'driver' | 'helper' | 'team_leader' | 'technician'
 export type EmployeeStatus = 'available' | 'assigned' | 'on_leave' | 'sick' | 'training' | 'unavailable'
 
 export interface Certification {

@@ -103,6 +103,33 @@ const boqDerive = (v: Record<string, any>) => {
   return { subtotal, contingency, grandTotal: subtotal + contingency }
 }
 
+// ─── Field-op crew + vehicle ────────────────────────────────────────────────
+// A field operation (survey/installation/integration) picks a crew of up to
+// four people (1 Team Leader, 1 Technician, 1 Rigger, 1 Driver — each
+// optional) and one vehicle, all selected from Resource Mgmt. `filter`
+// scopes each dropdown to the matching role.
+const employeeLookup = (role: string, label: string): FieldConfig => ({
+  key: `${role.replace(/_(\w)/g, (_: string, c: string) => c.toUpperCase())}Id`,
+  label,
+  type: 'select',
+  lookup: {
+    table: 'employees', valueKey: 'id', labelKey: 'name',
+    labelFormat: '{name} ({role})', orderBy: 'name',
+    filter: (r: any) => r.role === role,
+  },
+})
+const FIELD_CREW: FieldConfig[] = [
+  employeeLookup('team_leader', 'Team Leader'),
+  employeeLookup('technician', 'Technician'),
+  employeeLookup('rigger', 'Rigger'),
+  employeeLookup('driver', 'Driver'),
+  {
+    key: 'vehicleId', label: 'Vehicle', type: 'select',
+    lookup: { table: 'vehicles', valueKey: 'id', labelKey: 'registration', labelFormat: '{registration} — {make} {model}', orderBy: 'registration' },
+  },
+]
+const FIELD_PROJECT: FieldConfig = { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } }
+
 export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   leads: [
     { key: 'company', label: 'Company', type: 'select', required: true, lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
@@ -316,8 +343,10 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   survey_reports: [
     { key: 'siteCode', label: 'Site Code', type: 'select', required: true, lookup: { table: 'sites', valueKey: 'siteId', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId', populate: { siteName: 'name', latitude: 'latitude', longitude: 'longitude', siteId: 'id' } } },
     { key: 'siteName', label: 'Site Name', type: 'text' },
+    FIELD_PROJECT,
     { key: 'status', label: 'Status', type: 'select', options: ['planned', 'assigned', 'survey_started', 'survey_completed', 'approved'] },
     { key: 'scheduledDate', label: 'Scheduled Date', type: 'date' },
+    ...FIELD_CREW,
     { key: 'towerType', label: 'Tower Type', type: 'text' },
     { key: 'towerHeight', label: 'Tower Height (m)', type: 'number' },
     { key: 'shelterAvailable', label: 'Shelter Available', type: 'checkbox' },
@@ -336,8 +365,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'siteName', label: 'Site Name', type: 'text' },
     { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
     { key: 'status', label: 'Status', type: 'select', options: ['pending', 'material_delivered', 'install_started', 'install_completed', 'quality_check', 'approved'] },
-    { key: 'supervisorId', label: 'Supervisor', type: 'text' },
-    { key: 'team', label: 'Team', type: 'tags' },
+    ...FIELD_CREW,
     { key: 'comments', label: 'Comments', type: 'textarea' },
   ],
   integration_records: [
@@ -345,7 +373,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'siteName', label: 'Site Name', type: 'text' },
     { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
     { key: 'status', label: 'Status', type: 'select', options: ['pending', 'integration_started', 'testing', 'integrated', 'accepted'] },
-    { key: 'engineerId', label: 'Engineer', type: 'text' },
+    ...FIELD_CREW,
     { key: 'bbuModel', label: 'BBU Model', type: 'text' },
     { key: 'bbuSerial', label: 'BBU Serial', type: 'text' },
     { key: 'ipAddress', label: 'IP Address', type: 'text' },
@@ -423,7 +451,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   employees: [
     { key: 'employeeNumber', label: 'Employee #', type: 'text' },
     { key: 'name', label: 'Name', type: 'text', required: true },
-    { key: 'role', label: 'Role', type: 'select', options: ['pm', 'supervisor', 'rigger', 'civil_engineer', 'rf_engineer', 'mw_engineer', 'integration_engineer', 'hse_officer', 'driver', 'helper'] },
+    { key: 'role', label: 'Role', type: 'select', options: ['pm', 'supervisor', 'rigger', 'civil_engineer', 'rf_engineer', 'mw_engineer', 'integration_engineer', 'hse_officer', 'driver', 'helper', 'team_leader', 'technician'] },
     { key: 'department', label: 'Department', type: 'text' },
     { key: 'email', label: 'Email', type: 'text' },
     { key: 'phone', label: 'Phone', type: 'text' },

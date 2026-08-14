@@ -24,6 +24,9 @@ export interface LookupConfig {
   orderBy?: string
   /** formField → rowField: fields auto-filled when an option is chosen. */
   populate?: Record<string, string>
+  /** Client-side predicate applied to the fetched rows — e.g. show only
+   * `team_leader` employees in the "Team Leader" dropdown. */
+  filter?: (row: any) => boolean
 }
 
 export interface FieldConfig {
@@ -276,6 +279,12 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   // over the auto-fetched lookup options.
   const allOptions: Record<string, any[]> = { ...lookupOptions, ...(extraLookup ?? {}) }
 
+  // Lookup rows for a field, with its optional client-side filter applied.
+  const lookupRows = (f: FieldConfig) => {
+    const rows = allOptions[f.lookup!.table] ?? []
+    return f.lookup!.filter ? rows.filter(f.lookup!.filter) : rows
+  }
+
   const handleLookupChange = (f: FieldConfig, value: string) => {
     set(f.key, value)
     const lookup = f.lookup
@@ -397,7 +406,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                 f.lookup ? (
                   <Select label={f.label} value={values[f.key] ?? ''} onChange={(e) => handleLookupChange(f, e.target.value)}>
                     <option value="">Select…</option>
-                    {(allOptions[f.lookup.table] ?? []).map((row) => (
+                    {lookupRows(f).map((row) => (
                       <option key={row[f.lookup!.valueKey]} value={row[f.lookup!.valueKey]}>{lookupLabel(f, row)}</option>
                     ))}
                   </Select>
@@ -500,7 +509,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                     {/* Lookup-backed rows (existing) OR static options — the
                         Scope of Work checkbox groups are static options. */}
                     {(f.lookup
-                      ? (allOptions[f.lookup.table] ?? []).map((row) => ({ value: row[f.lookup!.valueKey], label: lookupLabel(f, row) }))
+                      ? lookupRows(f).map((row) => ({ value: row[f.lookup!.valueKey], label: lookupLabel(f, row) }))
                       : (f.options ?? []).map((o) => ({ value: o, label: o.replace(/_/g, ' ') }))
                     ).map(({ value: v, label }) => {
                       const checked = (values[f.key] ?? []).includes(v)
