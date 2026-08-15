@@ -21,3 +21,6 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .codewhale/
+
+# Tool config — never commit (AGENTS/instructions.md)
+reasonix.toml
