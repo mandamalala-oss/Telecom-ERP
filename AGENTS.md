@@ -63,3 +63,4 @@ Before calling it done: the behavior works, nothing existing broke, tests/typech
 Report back plainly — what changed, what you verified (and what you didn't), and anything worth flagging: design calls you made, known limits, follow-ups. Never say you ran something you didn't.
 
 **The rule underneath all of this: understand first, change as little as possible, verify everything, don't make things up.**
+Finally, when tests are good and ok, commit and push
