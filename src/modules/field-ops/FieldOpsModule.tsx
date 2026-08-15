@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { Plus, AlertTriangle, MapPin, Trash2, Pencil } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -7,6 +7,7 @@ import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
 import { TABLES } from '@/lib/api/entityConfigs'
+import { findBusyCrew } from '@/lib/fieldOps'
 import type { SurveyReport, InstallationRecord, IntegrationRecord, SurveyStatus, InstallStatus, Employee, Vehicle } from '@/types/v2'
 import { clsx } from 'clsx'
 
@@ -55,18 +56,43 @@ export function FieldOpsModule() {
   const vehRes = useEntity<Vehicle>(TABLES.vehicles)
 
   // Once a crew member/vehicle is attached to a field operation, mark it
-  // assigned/in-use so Resource Mgmt no longer shows it as available.
-  const assignResources = async (_row: unknown, values: Record<string, any>) => {
+  // assigned/in-use so Resource Mgmt no longer shows it as available. When the
+  // operation is approved/accepted, release them back to 'available'.
+  const syncResources = (terminal: string) => async (_row: unknown, values: Record<string, any>) => {
+    const releasing = values.status === terminal
     const empIds = [values.teamLeaderId, values.technicianId, values.riggerId, values.driverId].filter(Boolean)
     await Promise.all([
-      ...empIds.map((id: string) => empRes.update(id, { status: 'assigned' })),
-      ...(values.vehicleId ? [vehRes.update(values.vehicleId, { status: 'in_use' })] : []),
+      ...empIds.map((id: string) => empRes.update(id, { status: releasing ? 'available' : 'assigned' })),
+      ...(values.vehicleId ? [vehRes.update(values.vehicleId, { status: releasing ? 'available' : 'in_use' })] : []),
     ])
   }
 
-  const { data: surveys, error: survErr, openCreate: newSurvey, openEdit: editSurvey, remove: removeSurvey, modal: surveyModal } = useEntityCrud<SurveyReport>(TABLES.surveyReports, 'Survey', undefined, assignResources, undefined, assignResources)
-  const { data: installs, error: instErr, openCreate: newInstall, openEdit: editInstall, remove: removeInstall, modal: installModal } = useEntityCrud<InstallationRecord>(TABLES.installationRecords, 'Installation Record', undefined, assignResources, undefined, assignResources)
-  const { data: integs, error: integErr, openCreate: newInteg, openEdit: editInteg, remove: removeInteg, modal: integModal } = useEntityCrud<IntegrationRecord>(TABLES.integrationRecords, 'Integration Record', undefined, assignResources, undefined, assignResources)
+  // Blocking guard (runs before save): a crew member (Team Leader / Technician
+  // / Rigger / Driver) still on a NOT-yet-approved field op cannot be assigned
+  // to a new one. Managers/inspectors/CEO are not gated.
+  const surveysRef = useRef<SurveyReport[]>([])
+  const installsRef = useRef<InstallationRecord[]>([])
+  const integsRef = useRef<IntegrationRecord[]>([])
+  const guardCrew = (values: Record<string, any>, editing: any) => {
+    const busy = findBusyCrew(
+      { surveys: surveysRef.current, installs: installsRef.current, integs: integsRef.current },
+      editing?.id
+    )
+    const blocked = [values.teamLeaderId, values.technicianId, values.riggerId, values.driverId]
+      .filter((id) => id && busy.has(id))
+      .map((id) => busy.get(id))
+    if (blocked.length) {
+      throw new Error(`Cannot assign — crew still on an unfinished field op: ${[...new Set(blocked)].join(' · ')}. Approve it first.`)
+    }
+    return values
+  }
+
+  const { data: surveys, error: survErr, openCreate: newSurvey, openEdit: editSurvey, remove: removeSurvey, modal: surveyModal } = useEntityCrud<SurveyReport>(TABLES.surveyReports, 'Survey', undefined, syncResources('approved'), guardCrew, syncResources('approved'))
+  const { data: installs, error: instErr, openCreate: newInstall, openEdit: editInstall, remove: removeInstall, modal: installModal } = useEntityCrud<InstallationRecord>(TABLES.installationRecords, 'Installation Record', undefined, syncResources('approved'), guardCrew, syncResources('approved'))
+  const { data: integs, error: integErr, openCreate: newInteg, openEdit: editInteg, remove: removeInteg, modal: integModal } = useEntityCrud<IntegrationRecord>(TABLES.integrationRecords, 'Integration Record', undefined, syncResources('accepted'), guardCrew, syncResources('accepted'))
+  surveysRef.current = surveys
+  installsRef.current = installs
+  integsRef.current = integs
   const [selSurvey, setSelSurvey] = useState<SurveyReport | null>(null)
   const [selInstall, setSelInstall] = useState<InstallationRecord | null>(null)
   const [selInteg, setSelInteg] = useState<IntegrationRecord | null>(null)
@@ -118,11 +144,13 @@ export function FieldOpsModule() {
       .map((label, i) => [label, [r.teamLeaderId, r.technicianId, r.riggerId, r.driverId][i]] as [string, string])
       .filter(([, id]) => id)
     const veh = r.vehicleId ? vehLabel(r.vehicleId) : null
-    if (crew.length === 0 && !veh) return null
+    const pm = r.projectManagerId ? empName(r.projectManagerId) : null
+    if (crew.length === 0 && !veh && !pm) return null
     return (
       <div className="bg-slate-50 dark:bg-slate-700/30 rounded-lg p-3">
         <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Team & Vehicle</p>
         <div className="flex flex-wrap gap-x-6 gap-y-2">
+          {pm && <div><p className="text-xs text-slate-400">Project Manager</p><p className="text-sm font-semibold text-slate-900 dark:text-white">{pm}</p></div>}
           {crew.map(([label, id]) => (
             <div key={label}><p className="text-xs text-slate-400">{label}</p><p className="text-sm font-semibold text-slate-900 dark:text-white">{empName(id)}</p></div>
           ))}

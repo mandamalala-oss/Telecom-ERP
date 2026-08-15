@@ -13,7 +13,7 @@ export function useEntityCrud<T extends { id?: string }>(
   entityLabel: string,
   fieldsOverride?: FieldConfig[],
   onCreated?: (row: T, values: Record<string, any>) => Promise<void>,
-  transformPayload?: (values: Record<string, any>) => Record<string, any>,
+  transformPayload?: (values: Record<string, any>, editing: T | null) => Record<string, any>,
   onUpdated?: (row: T, values: Record<string, any>) => Promise<void>,
   modalExtraLookup?: Record<string, any[]>
 ) {
@@ -55,7 +55,7 @@ export function useEntityCrud<T extends { id?: string }>(
     if (!editable) return blocked()
     // Optional pre-save transform (e.g. EVM derives CPI/SPI/EAC from
     // BAC/PV/EV/AC before the row is written).
-    const transformed = transformPayload ? transformPayload(values) : values
+    const transformed = transformPayload ? transformPayload(values, editing) : values
     // Virtual fields (e.g. multiSelect site links) never touch the table row —
     // they are handled as side effects by onCreated/onUpdated.
     const payload = stripVirtualFields(transformed, fields)

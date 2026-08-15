@@ -46,6 +46,7 @@ export interface SurveyReport {
   riggerId?: string
   driverId?: string
   vehicleId?: string
+  projectManagerId?: string
   scheduledDate: string
   startedAt?: string
   completedAt?: string
@@ -91,6 +92,7 @@ export interface InstallationRecord {
   riggerId?: string
   driverId?: string
   vehicleId?: string
+  projectManagerId?: string
   materialDeliveredAt?: string
   startedAt?: string
   completedAt?: string
@@ -130,6 +132,7 @@ export interface IntegrationRecord {
   riggerId?: string
   driverId?: string
   vehicleId?: string
+  projectManagerId?: string
   startedAt?: string
   completedAt?: string
   acceptedAt?: string

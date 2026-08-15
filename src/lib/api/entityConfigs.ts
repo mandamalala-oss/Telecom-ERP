@@ -131,6 +131,17 @@ const FIELD_CREW: FieldConfig[] = [
 ]
 const FIELD_PROJECT: FieldConfig = { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } }
 
+// Project Manager: chosen from Resource Mgmt — department 'Project' + role
+// 'Manager' (the only people eligible to run a project / field operation).
+const PROJECT_MANAGER_FIELD: FieldConfig = {
+  key: 'projectManagerId', label: 'Project Manager', type: 'select',
+  lookup: {
+    table: 'employees', valueKey: 'id', labelKey: 'name',
+    labelFormat: '{name} ({department})', orderBy: 'name',
+    filter: (r: any) => r.role === 'Manager' && r.department === 'Project',
+  },
+}
+
 export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   leads: [
     { key: 'company', label: 'Company', type: 'select', required: true, lookup: { table: 'companies', valueKey: 'name', labelKey: 'name' } },
@@ -205,7 +216,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'budget', label: 'BAC (Ar)', type: 'number' },
     { key: 'spent', label: 'AC — Actual Cost (Ar)', type: 'number' },
     { key: 'revenue', label: 'PO (Ar)', type: 'number' },
-    { key: 'pm', label: 'Project Manager', type: 'text' },
+    { key: 'pm', label: 'Project Manager', type: 'select', lookup: { table: 'employees', valueKey: 'name', labelKey: 'name', labelFormat: '{name} ({department})', orderBy: 'name', filter: (r: any) => r.role === 'Manager' && r.department === 'Project' } },
     { key: 'progress', label: 'Progress %', type: 'number' },
     { key: 'region', label: 'Region', type: 'select', options: REGIONS },
     // ── Scope of Work (telecom site projects) ────────────────────────────────
@@ -345,6 +356,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'siteCode', label: 'Site Code', type: 'select', required: true, lookup: { table: 'sites', valueKey: 'siteId', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId', populate: { siteName: 'name', latitude: 'latitude', longitude: 'longitude', siteId: 'id' } } },
     { key: 'siteName', label: 'Site Name', type: 'text' },
     FIELD_PROJECT,
+    PROJECT_MANAGER_FIELD,
     { key: 'status', label: 'Status', type: 'select', options: ['planned', 'assigned', 'survey_started', 'survey_completed', 'approved'] },
     { key: 'scheduledDate', label: 'Scheduled Date', type: 'date' },
     ...FIELD_CREW,
@@ -365,6 +377,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'siteCode', label: 'Site Code', type: 'select', lookup: { table: 'sites', valueKey: 'siteId', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId', populate: { siteName: 'name', siteId: 'id' } } },
     { key: 'siteName', label: 'Site Name', type: 'text' },
     { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
+    PROJECT_MANAGER_FIELD,
     { key: 'status', label: 'Status', type: 'select', options: ['pending', 'material_delivered', 'install_started', 'install_completed', 'quality_check', 'approved'] },
     ...FIELD_CREW,
     { key: 'comments', label: 'Comments', type: 'textarea' },
@@ -373,6 +386,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'siteCode', label: 'Site Code', type: 'select', lookup: { table: 'sites', valueKey: 'siteId', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId', populate: { siteName: 'name', siteId: 'id' } } },
     { key: 'siteName', label: 'Site Name', type: 'text' },
     { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
+    PROJECT_MANAGER_FIELD,
     { key: 'status', label: 'Status', type: 'select', options: ['pending', 'integration_started', 'testing', 'integrated', 'accepted'] },
     ...FIELD_CREW,
     { key: 'bbuModel', label: 'BBU Model', type: 'text' },
