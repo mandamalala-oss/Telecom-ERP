@@ -1,10 +1,11 @@
-import { useState } from 'react'
-import { Plus, AlertTriangle, Trash2, Pencil } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Plus, AlertTriangle, Trash2, Pencil, Upload, Download } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { TABLES } from '@/lib/api/entityConfigs'
+import { parseResourceWorkbook, planResourceImport, buildResourceTemplateBuffer } from '@/lib/resourceImport'
 import type { Employee, Vehicle, Tool } from '@/types/v2'
 import { clsx } from 'clsx'
 
@@ -38,12 +39,63 @@ function isExpiringSoon(date?: string) {
 }
 
 export function ResourceModule() {
-  const { data: employees, error: empErr, openCreate: newEmp, openEdit: editEmp, remove: removeEmp, modal: empModal } = useEntityCrud<Employee>(TABLES.employees, 'Employee')
-  const { data: vehicles, error: vehErr, openCreate: newVeh, openEdit: editVeh, remove: removeVeh, modal: vehModal } = useEntityCrud<Vehicle>(TABLES.vehicles, 'Vehicle')
+  const { data: employees, error: empErr, openCreate: newEmp, openEdit: editEmp, remove: removeEmp, create: createEmp, modal: empModal } = useEntityCrud<Employee>(TABLES.employees, 'Employee')
+  const { data: vehicles, error: vehErr, openCreate: newVeh, openEdit: editVeh, remove: removeVeh, create: createVeh, modal: vehModal } = useEntityCrud<Vehicle>(TABLES.vehicles, 'Vehicle')
   const { data: tools, error: toolErr, openCreate: newTool, openEdit: editTool, remove: removeTool, modal: toolModal } = useEntityCrud<Tool>(TABLES.tools, 'Tool')
   const [tab, setTab] = useState<Tab>('engineers')
   const [selEmp, setSelEmp]     = useState<Employee | null>(null)
   const [selVeh, setSelVeh]     = useState<Vehicle | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importResult, setImportResult] = useState<{ created: number; duplicates: string[]; errors: string[] } | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  // ── Excel import ──────────────────────────────────────────────────────────
+  const handleImportFile = async (file: File) => {
+    setImporting(true)
+    try {
+      const parsed = parseResourceWorkbook(await file.arrayBuffer())
+      const plan = planResourceImport(parsed, { engineers: employees, vehicles })
+      const duplicates = [
+        ...plan.duplicateEngineers.map((n) => `Engineer "${n}"`),
+        ...plan.duplicateVehicles.map((r) => `Vehicle "${r}"`),
+      ]
+      let created = 0
+      for (const e of plan.engineersToCreate) {
+        await createEmp({
+          name: e.name, employeeNumber: e.employeeNumber, role: e.role,
+          department: e.department, email: e.email, phone: e.phone,
+          skills: e.skills, status: e.status, dailyRate: e.dailyRate ?? 0, joinedAt: e.joinedAt,
+        })
+        created++
+      }
+      for (const v of plan.vehiclesToCreate) {
+        await createVeh({
+          registration: v.registration, make: v.make, model: v.model, year: v.year,
+          type: v.type, driverName: v.driverName, currentOdometer: v.currentOdometer ?? 0,
+          fuelType: v.fuelType, status: v.status, notes: v.notes,
+        })
+        created++
+      }
+      setImportResult({ created, duplicates, errors: parsed.errors })
+    } catch (e: any) {
+      setImportResult({ created: 0, duplicates: [], errors: [`Failed to read file: ${e?.message ?? e}`] })
+    } finally {
+      setImporting(false)
+      if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  const downloadTemplate = () => {
+    const blob = new Blob([buildResourceTemplateBuffer()], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'resource_import_template.xlsx'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   const available   = employees.filter(e => e.status === 'available').length
   const vehAvail    = vehicles.filter(v => v.status === 'available').length
@@ -81,7 +133,18 @@ export function ResourceModule() {
             </button>
           ))}
         </div>
-        <Button icon={<Plus className="w-4 h-4"/>} onClick={addForTab}>Add {tab.slice(0,-1)}</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" icon={<Download className="w-4 h-4" />} onClick={downloadTemplate}>Template</Button>
+          <Button variant="secondary" icon={<Upload className="w-4 h-4" />} onClick={() => fileRef.current?.click()} disabled={importing}>{importing ? 'Importing…' : 'Import Excel'}</Button>
+          <Button icon={<Plus className="w-4 h-4"/>} onClick={addForTab}>Add {tab.slice(0,-1)}</Button>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".xlsx,.xls"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportFile(f) }}
+        />
       </div>
       {errorForTab && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{errorForTab}</div>}
 
@@ -273,6 +336,38 @@ export function ResourceModule() {
                 <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5 capitalize">{item.v}</p>
               </div>
             ))}
+          </div>
+        </Modal>
+      )}
+
+      {importResult && (
+        <Modal open onClose={() => setImportResult(null)} title="Import result" size="lg"
+          footer={
+            <div className="flex justify-end">
+              <Button variant="secondary" onClick={() => setImportResult(null)}>Close</Button>
+            </div>
+          }>
+          <div className="space-y-3">
+            <p className="text-sm font-bold text-green-600">Created {importResult.created} resource{importResult.created === 1 ? '' : 's'}.</p>
+            {importResult.duplicates.length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-amber-600 uppercase tracking-wide mb-1">Already exists — skipped ({importResult.duplicates.length})</p>
+                <ul className="text-xs text-slate-600 dark:text-slate-300 list-disc pl-4 space-y-0.5">
+                  {importResult.duplicates.map((d, i) => <li key={i}>{d}</li>)}
+                </ul>
+              </div>
+            )}
+            {importResult.errors.length > 0 && (
+              <div>
+                <p className="text-xs font-bold text-red-600 uppercase tracking-wide mb-1">Skipped — errors ({importResult.errors.length})</p>
+                <ul className="text-xs text-red-500 list-disc pl-4 space-y-0.5">
+                  {importResult.errors.map((e, i) => <li key={i}>{e}</li>)}
+                </ul>
+              </div>
+            )}
+            {importResult.duplicates.length === 0 && importResult.errors.length === 0 && (
+              <p className="text-sm text-slate-500">No duplicates or errors.</p>
+            )}
           </div>
         </Modal>
       )}
