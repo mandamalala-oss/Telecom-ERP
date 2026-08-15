@@ -98,7 +98,7 @@ export function parseResourceWorkbook(buffer: ArrayBuffer): ParsedWorkbook {
       employeeNumber: str(r['Employee Number']) || undefined,
       role: role ?? 'Technician',
       department: str(r['Department']) || undefined,
-      email: str(r['Email']) || undefined,
+      email: str(r['Email']).toLowerCase() || undefined,
       phone: str(r['Phone']) || undefined,
       skills: str(r['Skills']).split(',').map((s) => s.trim()).filter(Boolean),
       status: status ?? 'available',
