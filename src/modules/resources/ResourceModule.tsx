@@ -24,6 +24,9 @@ const VEH_STATUS: Record<string, string> = {
   maintenance:'bg-amber-100 text-amber-700', breakdown:'bg-red-100 text-red-700',
 }
 
+const EMP_ROLES = ['Team Leader', 'Technician', 'Rigger', 'Driver', 'Inspector', 'Manager', 'CEO']
+const EMP_STATUSES = ['available', 'assigned', 'on_leave', 'sick', 'training', 'unavailable']
+
 const fmt = (n: number) => `${n.toLocaleString()} Ar`
 
 function isExpiringSoon(date?: string) {
@@ -43,6 +46,8 @@ export function ResourceModule() {
   const { data: projects } = useEntity<Project>(TABLES.projects)
   const [tab, setTab] = useState<Tab>('engineers')
   const [view, setView] = useState<'grid' | 'list'>('grid')
+  const [roleFilter, setRoleFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
   const [selEmp, setSelEmp]     = useState<Employee | null>(null)
   const [selVeh, setSelVeh]     = useState<Vehicle | null>(null)
   const [importing, setImporting] = useState(false)
@@ -113,6 +118,10 @@ export function ResourceModule() {
   const available   = employees.filter(e => e.status === 'available').length
   const vehAvail    = vehicles.filter(v => v.status === 'available').length
   const toolsCalib  = tools.filter(t => isExpiringSoon(t.nextCalibration)).length
+  const filteredEmployees = employees.filter(e =>
+    (!roleFilter || e.role === roleFilter) &&
+    (!statusFilter || e.status === statusFilter)
+  )
 
   const addForTab = () => tab === 'engineers' ? newEmp() : tab === 'vehicles' ? newVeh() : newTool()
   const errorForTab = tab === 'engineers' ? empErr : tab === 'vehicles' ? vehErr : toolErr
@@ -187,7 +196,24 @@ export function ResourceModule() {
       {/* Engineers */}
       {tab === 'engineers' && (
         <>
-          <div className="flex items-center justify-end gap-1">
+          <div className="flex flex-col sm:flex-row gap-2 items-start sm:items-center justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="w-44">
+                <select className="select" value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} aria-label="Filter by role">
+                  <option value="">All roles</option>
+                  {EMP_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div className="w-40">
+                <select className="select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} aria-label="Filter by status">
+                  <option value="">All statuses</option>
+                  {EMP_STATUSES.map(s => <option key={s} value={s}>{s.replace('_',' ')}</option>)}
+                </select>
+              </div>
+              {(roleFilter || statusFilter) && (
+                <button onClick={() => { setRoleFilter(''); setStatusFilter('') }} className="text-xs font-semibold text-brand-600 hover:underline">Clear</button>
+              )}
+            </div>
             <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
               <button onClick={() => setView('grid')} aria-label="Grid view"
                 className={`px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1 transition-all ${view==='grid'?'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white':'text-slate-500'}`}>
@@ -200,9 +226,11 @@ export function ResourceModule() {
             </div>
           </div>
 
-          {view === 'grid' ? (
+          {filteredEmployees.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-10">No resources match the selected filters.</p>
+          ) : view === 'grid' ? (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {employees.map(emp => {
+              {filteredEmployees.map(emp => {
                 const expiring = (emp.certifications??[]).filter(c => isExpiringSoon(c.expiresAt))
                 return (
                   <Card key={emp.id} hover padding={false} onClick={() => setSelEmp(emp)} className="p-4">
@@ -248,7 +276,7 @@ export function ResourceModule() {
                     {['Name','Role','Department','Status','Phone','Email','Daily Rate',''].map(h => <th key={h} className="th">{h}</th>)}
                   </tr></thead>
                   <tbody>
-                    {employees.map(emp => (
+                    {filteredEmployees.map(emp => (
                       <tr key={emp.id} className="tr-hover cursor-pointer" onClick={() => setSelEmp(emp)}>
                         <td className="td font-semibold whitespace-nowrap">{emp.name}</td>
                         <td className="td text-xs">{emp.role}</td>
