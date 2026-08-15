@@ -713,6 +713,7 @@ describe('EntityFormModal — lookup filter (field-op crew)', () => {
     await userEvent.selectOptions(await screen.findByLabelText('Team Leader'), 'e1')
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
-    expect(onSubmit.mock.calls[0][0]).toMatchObject({ teamLeaderId: 'e1', riggerId: '' })
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ teamLeaderId: 'e1' })
+    expect(onSubmit.mock.calls[0][0].riggerId).toBeUndefined()
   })
 })

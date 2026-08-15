@@ -79,10 +79,20 @@ export function buildPayload(
         if (!Number.isFinite(n)) return { payload, error: `"${f.label}" must be a valid number` }
         payload[f.key] = n
       }
+    } else if (f.type === 'select') {
+      // A blank select maps to a uuid column (crew/vehicle/PM) or a check-
+      // constrained column (status). Never send '' — drop it so the DB
+      // default applies (e.g. status 'planned') or the column stays NULL.
+      if (payload[f.key] === '' || payload[f.key] === undefined || payload[f.key] === null) {
+        delete payload[f.key]
+      }
     } else if (f.type === 'date' && typeof payload[f.key] === 'string') {
       // <input type="date"> only accepts YYYY-MM-DD; normalize ISO
-      // timestamps coming back from timestamptz columns.
-      payload[f.key] = (payload[f.key] as string).slice(0, 10)
+      // timestamps coming back from timestamptz columns. A blank date is
+      // dropped (never '' — that would fail a date cast).
+      const d = (payload[f.key] as string).slice(0, 10)
+      if (d === '') delete payload[f.key]
+      else payload[f.key] = d
     }
   }
   return { payload, error: null }

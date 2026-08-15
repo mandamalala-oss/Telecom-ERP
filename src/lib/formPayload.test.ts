@@ -117,6 +117,29 @@ describe('stripVirtualFields', () => {
   })
 })
 
+describe('buildPayload — blank select/date dropped', () => {
+  it('drops a blank select field (uuid/check-constrained column)', () => {
+    const { payload, error } = buildPayload(
+      [f({ key: 'teamLeaderId', type: 'select' }), f({ key: 'status', type: 'select' })],
+      { teamLeaderId: '', status: '', name: 'X' }
+    )
+    expect(error).toBeNull()
+    expect(payload.teamLeaderId).toBeUndefined()
+    expect(payload.status).toBeUndefined()
+    expect(payload.name).toBe('X')
+  })
+
+  it('keeps a non-blank select value untouched', () => {
+    const { payload } = buildPayload([f({ key: 'status', type: 'select' })], { status: 'planned' })
+    expect(payload.status).toBe('planned')
+  })
+
+  it('drops a blank date field instead of sending empty string', () => {
+    const { payload } = buildPayload([f({ key: 'scheduledDate', type: 'date' })], { scheduledDate: '' })
+    expect(payload.scheduledDate).toBeUndefined()
+  })
+})
+
 describe('buildPayload — permissions matrix', () => {
   it('keeps the permission map as an object', () => {
     const { payload } = buildPayload(
