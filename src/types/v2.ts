@@ -330,7 +330,7 @@ export interface Asset {
 
 // ─── RESOURCES ───────────────────────────────────────────────
 
-export type EmployeeRole = 'pm' | 'supervisor' | 'rigger' | 'civil_engineer' | 'rf_engineer' | 'mw_engineer' | 'integration_engineer' | 'hse_officer' | 'driver' | 'helper' | 'team_leader' | 'technician'
+export type EmployeeRole = 'Team Leader' | 'Technician' | 'Rigger' | 'Driver' | 'Inspector' | 'Manager' | 'CEO'
 export type EmployeeStatus = 'available' | 'assigned' | 'on_leave' | 'sick' | 'training' | 'unavailable'
 
 export interface Certification {

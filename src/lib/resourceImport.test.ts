@@ -18,14 +18,14 @@ function workbook(engRows: Record<string, unknown>[] = [], vehRows: Record<strin
 describe('parseResourceWorkbook', () => {
   it('parses engineers and vehicles into typed rows', () => {
     const buf = workbook(
-      [{ Name: 'John Rakoto', Role: 'team_leader', 'Daily Rate': 150000, Skills: 'rigging, climbing' }],
+      [{ Name: 'John Rakoto', Role: 'Team Leader', 'Daily Rate': 150000, Skills: 'rigging, climbing' }],
       [{ Registration: '1234 TAB', Make: 'Toyota', Model: 'Hilux', Year: 2022, Type: 'pickup' }],
     )
     const p = parseResourceWorkbook(buf)
     expect(p.errors).toHaveLength(0)
     expect(p.engineers).toHaveLength(1)
     expect(p.engineers[0]).toMatchObject({
-      name: 'John Rakoto', role: 'team_leader', dailyRate: 150000, skills: ['rigging', 'climbing'],
+      name: 'John Rakoto', role: 'Team Leader', dailyRate: 150000, skills: ['rigging', 'climbing'],
     })
     expect(p.vehicles).toHaveLength(1)
     expect(p.vehicles[0]).toMatchObject({ registration: '1234 TAB', make: 'Toyota', type: 'pickup', year: 2022 })
@@ -45,7 +45,7 @@ describe('parseResourceWorkbook', () => {
   it('defaults blank role/status and uppercases registration', () => {
     const buf = workbook([{ Name: 'Alice' }], [{ Registration: 'abc 123' }])
     const p = parseResourceWorkbook(buf)
-    expect(p.engineers[0].role).toBe('helper')
+    expect(p.engineers[0].role).toBe('Technician')
     expect(p.engineers[0].status).toBe('available')
     expect(p.vehicles[0].registration).toBe('ABC 123')
     expect(p.vehicles[0].status).toBe('available')

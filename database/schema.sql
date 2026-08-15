@@ -591,7 +591,7 @@ create table employees (
   user_id            uuid,
   employee_number    text unique,
   name               text not null,
-  role               text check (role in ('pm','supervisor','rigger','civil_engineer','rf_engineer','mw_engineer','integration_engineer','hse_officer','driver','helper','team_leader','technician')),
+  role               text check (role in ('Team Leader','Technician','Rigger','Driver','Inspector','Manager','CEO')),
   department         text,
   email              text,
   phone              text,

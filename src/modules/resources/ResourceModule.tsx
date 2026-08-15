@@ -11,14 +11,6 @@ import { clsx } from 'clsx'
 
 type Tab = 'engineers' | 'vehicles' | 'tools'
 
-const ROLE_LABEL: Record<string, string> = {
-  pm:'Project Manager', supervisor:'Supervisor', rigger:'Rigger',
-  civil_engineer:'Civil Engineer', rf_engineer:'RF Engineer',
-  mw_engineer:'MW Engineer', integration_engineer:'Integration Engineer',
-  hse_officer:'HSE Officer', driver:'Driver', helper:'Helper',
-  team_leader:'Team Leader', technician:'Technician',
-}
-
 const STATUS_COLOR: Record<string, string> = {
   available:'bg-green-100 text-green-700', assigned:'bg-blue-100 text-blue-700',
   on_leave:'bg-amber-100 text-amber-700', sick:'bg-red-100 text-red-700',
@@ -162,7 +154,7 @@ export function ResourceModule() {
                     </div>
                     <div>
                       <p className="font-bold text-slate-900 dark:text-white text-sm">{emp.name}</p>
-                      <p className="text-xs text-slate-500">{ROLE_LABEL[emp.role] ?? emp.role}</p>
+                      <p className="text-xs text-slate-500">{emp.role}</p>
                     </div>
                   </div>
                   <span className={clsx('text-xs px-2 py-0.5 rounded-full font-bold capitalize', STATUS_COLOR[emp.status])}>
@@ -277,7 +269,7 @@ export function ResourceModule() {
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-3">
               {[
-                {l:'Employee #',v:selEmp.employeeNumber},{l:'Role',v:ROLE_LABEL[selEmp.role]??selEmp.role},
+                {l:'Employee #',v:selEmp.employeeNumber},{l:'Role',v:selEmp.role},
                 {l:'Department',v:selEmp.department},{l:'Status',v:selEmp.status?.replace('_',' ')},
                 {l:'Email',v:selEmp.email},{l:'Phone',v:selEmp.phone},
                 {l:'Daily Rate',v:fmt(selEmp.dailyRate)},{l:'Joined',v:selEmp.joinedAt},

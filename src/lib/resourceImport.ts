@@ -9,21 +9,21 @@ import type { Employee, EmployeeRole, EmployeeStatus, Vehicle } from '@/types/v2
  *   "Vehicles":   Registration | Make | Model | Year | Type | Driver Name | Odometer | Fuel Type | Status | Notes
  *
  * Dedupe keys: engineer `Name` (case-insensitive) and vehicle `Registration`.
- * Blank optional fields fall back to DB defaults (role → 'helper', status → 'available').
+ * Blank optional fields fall back to DB defaults (role → 'Technician', status → 'available').
  */
 
 export const ENGINEER_SHEET = 'Engineers'
 export const VEHICLE_SHEET = 'Vehicles'
 
-const EMPLOYEE_ROLES = ['pm', 'supervisor', 'rigger', 'civil_engineer', 'rf_engineer', 'mw_engineer', 'integration_engineer', 'hse_officer', 'driver', 'helper', 'team_leader', 'technician'] as const
+const EMPLOYEE_ROLES = ['Team Leader', 'Technician', 'Rigger', 'Driver', 'Inspector', 'Manager', 'CEO'] as const
 const EMPLOYEE_STATUSES = ['available', 'assigned', 'on_leave', 'sick', 'training', 'unavailable'] as const
 const VEHICLE_TYPES = ['4x4', 'pickup', 'van', 'crane', 'flatbed', 'motorcycle'] as const
 const VEHICLE_STATUSES = ['available', 'in_use', 'maintenance', 'breakdown'] as const
 const FUEL_TYPES = ['petrol', 'diesel'] as const
 
-/** First matching literal in `list`, or undefined — narrows without casting. */
+/** First literal in `list` matching `raw` case-insensitively — narrows without casting. */
 function pick<T extends string>(list: readonly T[], raw: string): T | undefined {
-  return list.find((v) => v === raw)
+  return list.find((v) => v.toLowerCase() === raw.toLowerCase())
 }
 
 const str = (v: unknown) => (v === undefined || v === null ? '' : String(v).trim())
@@ -81,7 +81,7 @@ export function parseResourceWorkbook(buffer: ArrayBuffer): ParsedWorkbook {
       out.errors.push(`Engineers — row ${i + 2}: missing "Name", skipped`)
       return
     }
-    const roleRaw = str(r['Role']).toLowerCase()
+    const roleRaw = str(r['Role'])
     const role = roleRaw ? pick(EMPLOYEE_ROLES, roleRaw) : undefined
     if (roleRaw && !role) {
       out.errors.push(`Engineers — "${name}": unknown Role "${str(r['Role'])}", skipped`)
@@ -96,7 +96,7 @@ export function parseResourceWorkbook(buffer: ArrayBuffer): ParsedWorkbook {
     out.engineers.push({
       name,
       employeeNumber: str(r['Employee Number']) || undefined,
-      role: role ?? 'helper',
+      role: role ?? 'Technician',
       department: str(r['Department']) || undefined,
       email: str(r['Email']) || undefined,
       phone: str(r['Phone']) || undefined,
@@ -197,7 +197,7 @@ export function buildResourceTemplateBuffer(): ArrayBuffer {
       {
         Name: 'John Rakoto',
         'Employee Number': 'EMP-001',
-        Role: 'team_leader',
+        Role: 'Team Leader',
         Department: 'Field',
         Email: 'john@example.com',
         Phone: '+261 32 00 000 00',

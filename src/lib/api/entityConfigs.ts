@@ -1,4 +1,5 @@
 import type { FieldConfig, LineColumn } from '@/components/crud/EntityFormModal'
+import { DEPARTMENTS } from '@/types'
 
 // Table names, keyed by the same short name used across the app/modules.
 export const TABLES = {
@@ -108,8 +109,8 @@ const boqDerive = (v: Record<string, any>) => {
 // four people (1 Team Leader, 1 Technician, 1 Rigger, 1 Driver — each
 // optional) and one vehicle, all selected from Resource Mgmt. `filter`
 // scopes each dropdown to the matching role.
-const employeeLookup = (role: string, label: string): FieldConfig => ({
-  key: `${role.replace(/_(\w)/g, (_: string, c: string) => c.toUpperCase())}Id`,
+const employeeLookup = (key: string, role: string, label: string): FieldConfig => ({
+  key: `${key}Id`,
   label,
   type: 'select',
   lookup: {
@@ -119,10 +120,10 @@ const employeeLookup = (role: string, label: string): FieldConfig => ({
   },
 })
 const FIELD_CREW: FieldConfig[] = [
-  employeeLookup('team_leader', 'Team Leader'),
-  employeeLookup('technician', 'Technician'),
-  employeeLookup('rigger', 'Rigger'),
-  employeeLookup('driver', 'Driver'),
+  employeeLookup('teamLeader', 'Team Leader', 'Team Leader'),
+  employeeLookup('technician', 'Technician', 'Technician'),
+  employeeLookup('rigger', 'Rigger', 'Rigger'),
+  employeeLookup('driver', 'Driver', 'Driver'),
   {
     key: 'vehicleId', label: 'Vehicle', type: 'select',
     lookup: { table: 'vehicles', valueKey: 'id', labelKey: 'registration', labelFormat: '{registration} — {make} {model}', orderBy: 'registration' },
@@ -451,8 +452,8 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   employees: [
     { key: 'employeeNumber', label: 'Employee #', type: 'text' },
     { key: 'name', label: 'Name', type: 'text', required: true },
-    { key: 'role', label: 'Role', type: 'select', options: ['pm', 'supervisor', 'rigger', 'civil_engineer', 'rf_engineer', 'mw_engineer', 'integration_engineer', 'hse_officer', 'driver', 'helper', 'team_leader', 'technician'] },
-    { key: 'department', label: 'Department', type: 'text' },
+    { key: 'role', label: 'Role', type: 'select', options: ['Team Leader', 'Technician', 'Rigger', 'Driver', 'Inspector', 'Manager', 'CEO'] },
+    { key: 'department', label: 'Department', type: 'select', options: [...DEPARTMENTS] },
     { key: 'email', label: 'Email', type: 'text' },
     { key: 'phone', label: 'Phone', type: 'text' },
     { key: 'skills', label: 'Skills', type: 'tags' },
