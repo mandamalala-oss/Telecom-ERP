@@ -129,16 +129,23 @@ export function ResourceModule() {
   const handleDeleteVeh = async (id: string) => { if (confirm('Delete this vehicle?')) { await removeVeh(id); setSelVeh(null) } }
 
   // Where is this employee working right now? Crew roles (Team Leader /
-  // Technician / Rigger / Driver) are linked to field ops by id; managers /
-  // inspectors / CEO are matched by name on the projects they run. Only
-  // in-progress work is shown (terminal statuses are filtered out).
+  // Technician / Rigger / Driver) and the Project Manager are linked to field
+  // ops by id; managers / inspectors / CEO are also matched by name on the
+  // projects they run. Only in-progress work is shown (terminal statuses are
+  // filtered out).
   const assignmentsFor = (emp: Employee) => {
-    const ops: { type: string; siteCode: string; siteName?: string; projectName?: string; status: string }[] = []
+    const ops: { type: string; role: string; siteCode: string; siteName?: string; projectName?: string; status: string }[] = []
     const collect = (type: string, terminal: string, rows: any[]) => {
       for (const r of rows) {
         if (r.status === terminal) continue
-        if (![r.teamLeaderId, r.technicianId, r.riggerId, r.driverId].includes(emp.id)) continue
-        ops.push({ type, siteCode: r.siteCode ?? '', siteName: r.siteName, projectName: r.projectName, status: r.status })
+        const role = r.projectManagerId === emp.id ? 'Project Manager'
+          : r.teamLeaderId === emp.id ? 'Team Leader'
+          : r.technicianId === emp.id ? 'Technician'
+          : r.riggerId === emp.id ? 'Rigger'
+          : r.driverId === emp.id ? 'Driver'
+          : null
+        if (!role) continue
+        ops.push({ type, role, siteCode: r.siteCode ?? '', siteName: r.siteName, projectName: r.projectName, status: r.status })
       }
     }
     collect('Survey', 'approved', surveys)
@@ -412,7 +419,7 @@ export function ResourceModule() {
                         <p className="text-sm font-semibold text-slate-900 dark:text-white">
                           <span className="font-mono text-brand-600">{op.siteCode}</span>{op.siteName ? ` — ${op.siteName}` : ''}
                         </p>
-                        <p className="text-xs text-slate-500">{op.projectName ?? 'No project'} · {op.type}</p>
+                        <p className="text-xs text-slate-500">{op.projectName ?? 'No project'} · {op.type} · {op.role}</p>
                       </div>
                       <span className="text-xs font-semibold text-slate-500 capitalize flex-shrink-0">{op.status.replace(/_/g, ' ')}</span>
                     </div>
