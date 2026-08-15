@@ -49,19 +49,20 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ---
 
-## ✅ Current state (verified 2026-08)
+## ✅ Current state (verified 2026-08-15)
 
-- `npm test` → **193/193 passing** (14 files)
+- `npm test` → **233/233 passing** (18 files)
 - `npx tsc --noEmit` → clean (test files are inside `src`, so they're typechecked too)
 - `npm run build` → succeeds (pre-existing chunk-size warning only, unrelated)
-- HEAD: `50356c0` — **everything pushed to `origin/main`** (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked).
+- HEAD: `101afab` — **everything pushed to `origin/main`**; `git status` clean after the 2026-08-15 cleanup. (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked.)
 - Access model is now **grant-based (CEO-only)** — see Milestone 13 below. `ROLE_PERMISSIONS` is GONE from `src/types`; roles are labels only (DB RLS still role-scoped).
 - Finance automation + Supply/Trading projects — see **Milestone 14** below; auto-create Project from a received PO — see **Milestone 15** below (migrations 014–021 **all applied on the live DB**).
+- Live-DB probe (2026-08-15): `projects.scope_*`, `sites.means_of_transport` / `transmission_type` / `customer_*`, `boqs.network_type`, `catalog_items`, `quotes/invoices/payments.delivery_type`, and field-op crew/PM columns all exist — i.e. migrations 023–030 appear applied on live.
 - Milestone 10 changed: `src/App.tsx`, `src/contexts/AuthContext.tsx` (+`.test.tsx`), `src/components/auth/` (LoginPage + test), `src/components/layout/Header.tsx`, `database/schema.sql`, `schema.sql`; new `database/migrations/012_auth_rls.sql`
 - Milestone 8 changed: `src/components/crud/EntityFormModal.tsx` + `.test.tsx`, `src/lib/hooks/useEntityCrud.tsx`, `src/lib/api/entityConfigs.ts` + `.test.ts`, `src/lib/evm.ts` + `.test.ts`, `src/modules/controls/EVMModule.tsx`
 - Milestone 6 changed: `database/schema.sql`, `schema.sql`, `src/lib/api/entityConfigs.ts`, `src/lib/evm.ts` + `.test.ts`, `src/modules/controls/EVMModule.tsx`, `src/types/index.ts`; new `database/migrations/011_add_evm_po.sql`
 - `git status` (Milestone 5): modified `database/schema.sql`, `schema.sql`, `src/components/crud/EntityFormModal.tsx` + `.test.tsx`, `src/lib/api/entityConfigs.ts` + `.test.ts`, `src/lib/evm.ts` + `.test.ts`, `src/lib/formPayload.ts` + `.test.ts`, `src/lib/hooks/useEntityCrud.tsx`, `src/modules/{controls/EVMModule, projects/ProjectsModule}.tsx`, `src/types/index.ts`; untracked `database/migrations/009_add_project_sites.sql`, `database/migrations/010_merge_duplicate_projects.sql`
-- Untracked (intentional): `reasonix.toml` (tool config, never commit). `instructions.md` is now committed (2026-08).
+- Git-ignored (intentional): `reasonix.toml` (tool config, never commit — added to `.gitignore` 2026-08-15). `instructions.md` is committed and kept current.
 
 ### Milestone 13 — Email confirmation + CEO-grant permissions (pushed `d775f06`)
 
@@ -125,7 +126,7 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ### Milestone 16 — Scope of Work section on telecom projects (per `SOW.md`)
 
-**Fields** (projects table, migration 023 — **NOT yet run on live DB**):
+**Fields** (projects table, migration 023 — **RUN on live DB, verified 2026-08-15**: `projects.scope_*` columns present):
 - `scope_build_type` select `NSB` | `MOD` and `scope_technology` select `RAN` | `MW` — the two top-level selectors
 - `scope_nsb_ran_items` **text[]** multi-select (`ANTENNA, RRU, FO, RACK, BASEBAND`) — NSB+RAN
 - `scope_nsb_mw_dish_size` select dish size (`0.3m…3m`) — NSB+MW
@@ -142,7 +143,7 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ---
 
-### Milestone 17 — Site access & transmission fields (per user 2026-08, migration 024 — NOT yet run on live DB)
+### Milestone 17 — Site access & transmission fields (per user 2026-08, migration 024 — RUN on live DB, verified 2026-08-15)
 
 - `sites.means_of_transport` **text[]** — checkbox multi-select (**4x4, moto, boat, foot**), more than one allowed (replaces the old single-choice `access_type` concept; the column stays for existing data)
 - `sites.transport_length_km` numeric — transport leg length in km
@@ -157,7 +158,7 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ### Milestone 18 — BOQ module fully working + linked to Supabase
 
-- **Migration 026** (`database/migrations/026_create_boqs_table.sql`) — the `boqs` table existed only in `schema.sql`, **no migration → missing on the live DB**, so every BOQ query failed. Now `create table if not exists` + trigger + permissive RLS policy. **NOT yet run on live DB.**
+- **Migration 026** (`database/migrations/026_create_boqs_table.sql`) — the `boqs` table existed only in `schema.sql`, **no migration → missing on the live DB**, so every BOQ query failed. Now `create table if not exists` + trigger + permissive RLS policy. **RUN on live DB, verified 2026-08-15 (`boqs` table exists).**
 - **Line items editor** in the BOQ form: `FieldConfig.lineColumns` makes the generic `lineItems` editor column-configurable (Code/Description/Category/Unit/Qty/Unit Cost; finance keeps its default columns unchanged). Tailwind spans go through a static `COL_SPANS` lookup (dynamic `col-span-${n}` would be purged).
 - **Derived totals**: `FieldConfig.derive` recomputes `subtotal` / `contingency` (from `contingencyPct`) / `grandTotal` from the items on every change and on modal open — never stale, stored too.
 - **buildPayload** handles both line-item shapes: finance (`unitPrice`/`total`) output byte-identical; BOQ rows add `unitCost`/`totalCost` and empty rows are dropped.
@@ -174,10 +175,17 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 - Valid rows are appended to the quote and subtotal/tax/total are recalculated immediately; invalid rows are reported and skipped.
 - New `src/lib/quoteImport.ts` parser (+ unit tests) and an `EntityFormModal` test covering the upload flow.
 
+### Session 2026-08-15 cleanup (committed `101afab`)
+
+- `auto-project.md` restored — it is tracked and still referenced by this doc; the worktree deletion was reverted.
+- Duplicate `scripts/catalog-import/data/*.csv` removed — byte-identical to the tracked `BOQ.csv` / `MW.csv`.
+- `reasonix.toml` added to `.gitignore` (tool config, never commit).
+- `git status` clean; pushed to `origin/main`.
+
 ## 🔒 Git / environment notes (IMPORTANT for future sessions)
 
 - **Home directory is READ-ONLY** (container): no `~/.ssh`, no `~/.git-credentials` can be created. SSH to GitHub is impossible; **HTTPS + PAT is the only auth path**.
-- **Pushing requires a PAT** each time (token never persisted). Procedure used successfully twice:
+- **Pushing requires a PAT** each time (token never persisted). Procedure used successfully multiple times:
   1. Write a throwaway askpass script: `printf '#!/bin/sh\ncase "$1" in\n  *Password*) echo "$GIT_PAT" ;;\n  *) echo "kobajah" ;;\nesac\n' > /tmp/git-askpass.sh && chmod 700 /tmp/git-askpass.sh`
   2. `GIT_PAT='<token>' GIT_ASKPASS=/tmp/git-askpass.sh git push -u origin main`
   3. `rm -f /tmp/git-askpass.sh` — NEVER write the token into `.git/config`, the remote URL, or any file.
@@ -279,7 +287,7 @@ Run: `npm test` (one-shot) / `npm run test:watch`. Config: `vitest.config.ts` (d
 ## 🏗 Architecture facts to remember
 
 - Schema: **30 tables**, nested lists as JSONB in parent rows (line items, ATP results, equipment…). `database/schema.sql` is canonical; root `schema.sql` is a duplicate — **keep in sync** (both edited together every time).
-- **No real auth**: demo user-picker over `users` table; RLS is `allow_all` on every table (by design, documented). **Security milestone still open.**
+- **Auth**: real Supabase Auth (email/password) is implemented. Core tables have role-scoped RLS; non-core tables still use `allow_all` (**RLS phase 2 still open**).
 - `keysToCamel`/`keysToSnake` in `src/lib/api/case.ts`; `makeApi().list()` defaults `order_by=created_at` with a retry fallback.
 - `src/lib/api/entityConfigs.ts`: `TABLES` (camel → snake) + `FIELD_CONFIGS` keyed by snake_case table names; startup guard warns on missing configs.
 - **Link direction is project → many sites** (`project_sites` junction, multi-select in the project form). Sites carry no customer/project columns. Site form fields: siteId, name, region, lat/long, technology, status, priority, tower, power, access, distanceKm, revenue, notes.
@@ -297,7 +305,7 @@ Run: `npm test` (one-shot) / `npm run test:watch`. Config: `vitest.config.ts` (d
 4. **RLS phase 2** (still open): role-scope the remaining tables (leads, opportunities, quotes, purchase_orders, boqs, contracts, survey/installation/integration/atp, inventory, procurement, assets, resources, documents, subcontractors, …) — note the frontend matrix is grant-based now, but DB RLS is still role-scoped.
 5. ✅ **Deploy**: Vercel, both env vars set.
 6. Optional follow-ups the user may want (ask before doing):
-   - **Line-items editor** for invoices/quotes/POs (JSONB `items` has no form UI; user deferred this earlier — shows empty items in detail modal).
+   - ✅ **Line-items editor** for invoices/quotes/POs — done (Milestone 14); Quotes now also have Excel import (Milestone 19).
    - Extend test coverage: hooks (`useEntityCrud`/`useEntity`), dashboards, Kanban logic.
    - Make dashboard **Total Cost** use `projects.spent` instead of `evm_metrics.ac` (user asked what it was; flagged the EVM-data dependency as a caveat).
    - Mobile PWA / GIS / AI roadmap items (see ARCHITECTURE.md).
