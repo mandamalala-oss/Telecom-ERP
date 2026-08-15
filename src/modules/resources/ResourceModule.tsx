@@ -45,32 +45,45 @@ export function ResourceModule() {
   const handleImportFile = async (file: File) => {
     setImporting(true)
     try {
-      const parsed = parseResourceWorkbook(await file.arrayBuffer())
+      let parsed
+      try {
+        parsed = parseResourceWorkbook(await file.arrayBuffer())
+      } catch (e: any) {
+        setImportResult({ created: 0, duplicates: [], errors: [`Couldn't read the Excel file: ${e?.message ?? e}`] })
+        return
+      }
       const plan = planResourceImport(parsed, { engineers: employees, vehicles })
       const duplicates = [
         ...plan.duplicateEngineers.map((n) => `Engineer "${n}"`),
         ...plan.duplicateVehicles.map((r) => `Vehicle "${r}"`),
       ]
+      const createErrors: string[] = []
       let created = 0
       for (const e of plan.engineersToCreate) {
-        await createEmp({
-          name: e.name, employeeNumber: e.employeeNumber, role: e.role,
-          department: e.department, email: e.email, phone: e.phone,
-          skills: e.skills, status: e.status, dailyRate: e.dailyRate ?? 0, joinedAt: e.joinedAt,
-        })
-        created++
+        try {
+          await createEmp({
+            name: e.name, employeeNumber: e.employeeNumber, role: e.role,
+            department: e.department, email: e.email, phone: e.phone,
+            skills: e.skills, status: e.status, dailyRate: e.dailyRate ?? 0, joinedAt: e.joinedAt,
+          })
+          created++
+        } catch (err: any) {
+          createErrors.push(`Engineer "${e.name}": ${err?.message ?? err}`)
+        }
       }
       for (const v of plan.vehiclesToCreate) {
-        await createVeh({
-          registration: v.registration, make: v.make, model: v.model, year: v.year,
-          type: v.type, driverName: v.driverName, currentOdometer: v.currentOdometer ?? 0,
-          fuelType: v.fuelType, status: v.status, notes: v.notes,
-        })
-        created++
+        try {
+          await createVeh({
+            registration: v.registration, make: v.make, model: v.model, year: v.year,
+            type: v.type, driverName: v.driverName, currentOdometer: v.currentOdometer ?? 0,
+            fuelType: v.fuelType, status: v.status, notes: v.notes,
+          })
+          created++
+        } catch (err: any) {
+          createErrors.push(`Vehicle "${v.registration}": ${err?.message ?? err}`)
+        }
       }
-      setImportResult({ created, duplicates, errors: parsed.errors })
-    } catch (e: any) {
-      setImportResult({ created: 0, duplicates: [], errors: [`Failed to read file: ${e?.message ?? e}`] })
+      setImportResult({ created, duplicates, errors: [...parsed.errors, ...createErrors] })
     } finally {
       setImporting(false)
       if (fileRef.current) fileRef.current.value = ''
