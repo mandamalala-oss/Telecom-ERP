@@ -1,10 +1,11 @@
-import { Fragment, useEffect, useState, type FormEvent } from 'react'
-import { X, Plus, Library } from 'lucide-react'
+import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react'
+import { X, Plus, Library, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { makeApi } from '@/lib/api/crud'
 import { buildPayload } from '@/lib/formPayload'
+import { parseQuoteWorkbook } from '@/lib/quoteImport'
 import { PERMISSION_MODULES } from '@/types'
 import { ItemPickerModal } from './ItemPickerModal'
 import type { BOQItem, NetworkType } from '@/types/v2'
@@ -62,6 +63,10 @@ export interface FieldConfig {
   section?: string
   /** Custom columns for a `lineItems` editor (default: the finance columns). */
   lineColumns?: LineColumn[]
+  /** For a finance `lineItems` field: shows an Excel import button beside
+   * "+ Add line". The workbook must use the Quote line-items template
+   * (Designation | Qty | Unit | Unit Price). */
+  importExcel?: boolean
   /** `catalogItems`: form field holding the network type ('RAN' | 'MW') that
    * gates the picker — the button stays disabled until it has a value. */
   networkField?: string
@@ -147,6 +152,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   const [error, setError] = useState<string | null>(null)
   const [lookupOptions, setLookupOptions] = useState<Record<string, any[]>>({})
   const [pickerNetwork, setPickerNetwork] = useState<NetworkType | null>(null)
+  const lineFileRef = useRef<HTMLInputElement | null>(null)
 
   // Re-seed values every time the modal OPENS, from the current `initial`:
   // New always starts blank and a reopened record shows the latest saved
@@ -270,6 +276,27 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
       }
     }
     applyLineTotals(f, items)
+  }
+
+  // Excel import for finance line items (Quotes). Reads the first sheet of
+  // the uploaded workbook, appends valid rows to the line list, and lets
+  // applyLineTotals recompute subtotal/tax/total so the imported totals are
+  // never stale.
+  const handleLineImport = async (f: FieldConfig, file: File) => {
+    setError(null)
+    try {
+      const parsed = parseQuoteWorkbook(await file.arrayBuffer())
+      if (parsed.errors.length > 0) {
+        setError(parsed.errors.join(' · '))
+        return
+      }
+      const imported = parsed.items.map((item) => ({ ...item, id: lineId() }))
+      applyLineTotals(f, [...(values[f.key] ?? []), ...imported])
+    } catch (err: any) {
+      setError(`Couldn't read the Excel file: ${err?.message ?? err}`)
+    } finally {
+      if (lineFileRef.current) lineFileRef.current.value = ''
+    }
   }
 
   const itemsField = fields.find((x) => x.type === 'lineItems')
@@ -566,7 +593,32 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                           )}
                         </div>
                       ) : (
-                        <Button type="button" variant="secondary" onClick={() => addLine(f)}>+ Add line</Button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <Button type="button" variant="secondary" onClick={() => addLine(f)}>+ Add line</Button>
+                          {f.importExcel && (
+                            <>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                icon={<Upload className="w-4 h-4" />}
+                                onClick={() => lineFileRef.current?.click()}
+                              >
+                                Import Excel
+                              </Button>
+                              <input
+                                ref={lineFileRef}
+                                type="file"
+                                accept=".xlsx,.xls"
+                                className="hidden"
+                                aria-label={`Import ${f.label}`}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0]
+                                  if (file) void handleLineImport(f, file)
+                                }}
+                              />
+                            </>
+                          )}
+                        </div>
                       )}
                     </div>
                   </div>

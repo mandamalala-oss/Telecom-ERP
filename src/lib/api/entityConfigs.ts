@@ -297,7 +297,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { customerId: 'id' } } },
     { key: 'deliveryType', label: 'Delivery Type', type: 'select', options: ['ASP', 'SUPPLY'] },
     { key: 'status', label: 'Status', type: 'select', options: ['draft', 'sent', 'accepted', 'rejected', 'expired'] },
-    { key: 'items', label: 'Line Items', type: 'lineItems' },
+    { key: 'items', label: 'Line Items', type: 'lineItems', importExcel: true },
     { key: 'subtotal', label: 'Subtotal (Ar)', type: 'number' },
     { key: 'taxRate', label: 'Tax Rate %', type: 'number' },
     { key: 'tax', label: 'Tax (Ar)', type: 'number' },

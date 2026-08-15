@@ -167,6 +167,13 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ---
 
+### Milestone 19 — Quote Excel import (2026-08)
+
+- Finance → Quotes: the Line Items editor now has an **Import Excel** button beside **+ Add line** (only for Quotes).
+- Expected template: first sheet with header row `Designation | Qty | Unit | Unit Price` (aliases `Description` / `Quantity` / `Price` accepted).
+- Valid rows are appended to the quote and subtotal/tax/total are recalculated immediately; invalid rows are reported and skipped.
+- New `src/lib/quoteImport.ts` parser (+ unit tests) and an `EntityFormModal` test covering the upload flow.
+
 ## 🔒 Git / environment notes (IMPORTANT for future sessions)
 
 - **Home directory is READ-ONLY** (container): no `~/.ssh`, no `~/.git-credentials` can be created. SSH to GitHub is impossible; **HTTPS + PAT is the only auth path**.

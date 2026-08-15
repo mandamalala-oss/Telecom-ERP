@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, cleanup, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import * as XLSX from 'xlsx'
 import { EntityFormModal, pruneConditional, applyDerived, type FieldConfig, type LineColumn } from './EntityFormModal'
 
 // vitest runs with globals:false, so RTL's auto-cleanup never registers —
@@ -406,6 +407,42 @@ describe('EntityFormModal — line items', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save' }))
     await waitFor(() => expect(onSubmit).toHaveBeenCalled())
     expect(onSubmit.mock.calls[0][0].items).toHaveLength(0)
+  })
+
+  it('imports Excel rows beside Add line and derives the quote totals', async () => {
+    const importableItems: FieldConfig = { key: 'items', label: 'Line Items', type: 'lineItems', importExcel: true }
+    const fields: FieldConfig[] = [
+      importableItems,
+      { key: 'subtotal', label: 'Subtotal', type: 'number' },
+      { key: 'taxRate', label: 'Tax Rate %', type: 'number' },
+      { key: 'tax', label: 'Tax', type: 'number' },
+      { key: 'total', label: 'Total', type: 'number' },
+    ]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet([
+      { Designation: 'Cable 4G', Qty: 2, Unit: 'm', 'Unit Price': 500 },
+      { Designation: 'Antenna', Qty: 1, Unit: 'u', 'Unit Price': 120000 },
+    ]), 'Quotes')
+    const buf = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+    const file = new File([buf], 'quotes.xlsx', {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    })
+
+    const onSubmit = renderForm(fields)
+    await userEvent.upload(screen.getByLabelText('Import Line Items'), file)
+
+    expect(await screen.findByDisplayValue('Cable 4G')).toBeTruthy()
+    expect(screen.getByDisplayValue('Antenna')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+
+    const payload = onSubmit.mock.calls[0][0]
+    expect(payload.items).toHaveLength(2)
+    expect(payload.items[0]).toMatchObject({ description: 'Cable 4G', quantity: 2, unit: 'm', unitPrice: 500, total: 1000 })
+    expect(payload.items[1]).toMatchObject({ description: 'Antenna', quantity: 1, unit: 'u', unitPrice: 120000, total: 120000 })
+    expect(payload.subtotal).toBe(121000)
+    expect(payload.tax).toBe(0)
+    expect(payload.total).toBe(121000)
   })
 })
 
