@@ -14,7 +14,7 @@ export function useEntityCrud<T extends { id?: string }>(
   fieldsOverride?: FieldConfig[],
   onCreated?: (row: T, values: Record<string, any>) => Promise<void>,
   transformPayload?: (values: Record<string, any>, editing: T | null) => Record<string, any>,
-  onUpdated?: (row: T, values: Record<string, any>) => Promise<void>,
+  onUpdated?: (row: T, values: Record<string, any>, previous: T | null) => Promise<void>,
   modalExtraLookup?: Record<string, any[]>
 ) {
   const { canEdit } = useAuth()
@@ -65,7 +65,9 @@ export function useEntityCrud<T extends { id?: string }>(
       // reopen of the same record shows fresh values, not the pre-save ones.
       setEditing(row)
       // Optional post-update side effects (same contract as onCreated).
-      await onUpdated?.(row, values)
+      // `editing` is still the pre-save row at this point, so callbacks can
+      // release resources that were removed by the edit (e.g. swapped crew).
+      await onUpdated?.(row, values, editing)
     } else {
       const row = await entity.create(payload as Partial<T>)
       // Optional post-create side effects (e.g. inventory movement → adjust

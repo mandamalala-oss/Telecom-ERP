@@ -7,7 +7,7 @@ import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
 import { TABLES } from '@/lib/api/entityConfigs'
-import { findBusyCrew } from '@/lib/fieldOps'
+import { findBusyCrew, planResourceStatusUpdates } from '@/lib/fieldOps'
 import type { SurveyReport, InstallationRecord, IntegrationRecord, SurveyStatus, InstallStatus, Employee, Vehicle } from '@/types/v2'
 import { clsx } from 'clsx'
 
@@ -58,12 +58,11 @@ export function FieldOpsModule() {
   // Once a crew member/vehicle is attached to a field operation, mark it
   // assigned/in-use so Resource Mgmt no longer shows it as available. When the
   // operation is approved/accepted, release them back to 'available'.
-  const syncResources = (terminal: string) => async (_row: unknown, values: Record<string, any>) => {
-    const releasing = values.status === terminal
-    const empIds = [values.teamLeaderId, values.technicianId, values.riggerId, values.driverId].filter(Boolean)
+  const syncResources = (terminal: string) => async (_row: unknown, values: Record<string, any>, previous?: any) => {
+    const plan = planResourceStatusUpdates(values, previous, terminal)
     await Promise.all([
-      ...empIds.map((id: string) => empRes.update(id, { status: releasing ? 'available' : 'assigned' })),
-      ...(values.vehicleId ? [vehRes.update(values.vehicleId, { status: releasing ? 'available' : 'in_use' })] : []),
+      ...plan.employeeUpdates.map(({ id, status }) => empRes.update(id, { status })),
+      ...plan.vehicleUpdates.map(({ id, status }) => vehRes.update(id, { status })),
     ])
   }
 

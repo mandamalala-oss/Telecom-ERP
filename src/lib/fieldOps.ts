@@ -45,3 +45,48 @@ export function findBusyCrew(
   scan(data.integs, 'integration')
   return busy
 }
+
+export interface ResourceStatusPlan {
+  employeeUpdates: { id: string; status: 'available' | 'assigned' }[]
+  vehicleUpdates: { id: string; status: 'available' | 'in_use' }[]
+}
+
+/**
+ * Plan the Resource Mgmt status changes for a field-op save.
+ *
+ * - New crew members are marked `assigned` (unless the op is terminal — then
+ *   they stay/return to `available`).
+ * - Crew members from the previous record who are no longer in the saved
+ *   record are always released back to `available` (e.g. a swapped rigger).
+ * - Same rule for the vehicle: a replaced/cleared vehicle returns to
+ *   `available`, a newly selected one becomes `in_use`.
+ */
+export function planResourceStatusUpdates(
+  values: Record<string, any>,
+  previous: Record<string, any> | null | undefined,
+  terminal: string
+): ResourceStatusPlan {
+  const releasing = values.status === terminal
+  const nextCrew = CREW_KEYS.map((k) => values[k]).filter(Boolean) as string[]
+  const prevCrew = previous
+    ? (CREW_KEYS.map((k) => previous[k]).filter(Boolean) as string[])
+    : []
+  const removedCrew = prevCrew.filter((id) => !nextCrew.includes(id))
+
+  const employees = new Map<string, 'available' | 'assigned'>()
+  for (const id of nextCrew) employees.set(id, releasing ? 'available' : 'assigned')
+  for (const id of removedCrew) employees.set(id, 'available')
+
+  const vehicles = new Map<string, 'available' | 'in_use'>()
+  if (previous?.vehicleId && previous.vehicleId !== values.vehicleId) {
+    vehicles.set(previous.vehicleId, 'available')
+  }
+  if (values.vehicleId) {
+    vehicles.set(values.vehicleId, releasing ? 'available' : 'in_use')
+  }
+
+  return {
+    employeeUpdates: [...employees].map(([id, status]) => ({ id, status })),
+    vehicleUpdates: [...vehicles].map(([id, status]) => ({ id, status })),
+  }
+}
