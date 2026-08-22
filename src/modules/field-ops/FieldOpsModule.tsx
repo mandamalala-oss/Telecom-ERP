@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Plus, AlertTriangle, MapPin, Trash2, Pencil } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -86,9 +86,9 @@ export function FieldOpsModule() {
     return values
   }
 
-  const { data: surveys, error: survErr, openCreate: newSurvey, openEdit: editSurvey, remove: removeSurvey, modal: surveyModal } = useEntityCrud<SurveyReport>(TABLES.surveyReports, 'Survey', undefined, syncResources('approved'), guardCrew, syncResources('approved'))
-  const { data: installs, error: instErr, openCreate: newInstall, openEdit: editInstall, remove: removeInstall, modal: installModal } = useEntityCrud<InstallationRecord>(TABLES.installationRecords, 'Installation Record', undefined, syncResources('approved'), guardCrew, syncResources('approved'))
-  const { data: integs, error: integErr, openCreate: newInteg, openEdit: editInteg, remove: removeInteg, modal: integModal } = useEntityCrud<IntegrationRecord>(TABLES.integrationRecords, 'Integration Record', undefined, syncResources('accepted'), guardCrew, syncResources('accepted'))
+  const { data: surveys, error: survErr, loading: survLoading, openCreate: newSurvey, openEdit: editSurvey, remove: removeSurvey, modal: surveyModal } = useEntityCrud<SurveyReport>(TABLES.surveyReports, 'Survey', undefined, syncResources('approved'), guardCrew, syncResources('approved'))
+  const { data: installs, error: instErr, loading: instLoading, openCreate: newInstall, openEdit: editInstall, remove: removeInstall, modal: installModal } = useEntityCrud<InstallationRecord>(TABLES.installationRecords, 'Installation Record', undefined, syncResources('approved'), guardCrew, syncResources('approved'))
+  const { data: integs, error: integErr, loading: integLoading, openCreate: newInteg, openEdit: editInteg, remove: removeInteg, modal: integModal } = useEntityCrud<IntegrationRecord>(TABLES.integrationRecords, 'Integration Record', undefined, syncResources('accepted'), guardCrew, syncResources('accepted'))
   surveysRef.current = surveys
   installsRef.current = installs
   integsRef.current = integs
@@ -96,6 +96,41 @@ export function FieldOpsModule() {
   const [selInstall, setSelInstall] = useState<InstallationRecord | null>(null)
   const [selInteg, setSelInteg] = useState<IntegrationRecord | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  // Self-heal stale resource statuses on load: if an employee/vehicle is
+  // marked assigned/in-use but no in-progress field op references it (e.g. a
+  // swapped crew member from a previous save), release it back to available.
+  useEffect(() => {
+    if (empRes.loading || vehRes.loading || survLoading || instLoading || integLoading) return
+    if (survErr || instErr || integErr) return
+
+    const activeEmps = new Set<string>()
+    const activeVehs = new Set<string>()
+    const scan = (rows: any[], terminal: string) => {
+      for (const r of rows) {
+        if (r.status === terminal) continue
+        for (const id of [r.teamLeaderId, r.technicianId, r.riggerId, r.driverId]) {
+          if (id) activeEmps.add(id)
+        }
+        if (r.vehicleId) activeVehs.add(r.vehicleId)
+      }
+    }
+    scan(surveys, 'approved')
+    scan(installs, 'approved')
+    scan(integs, 'accepted')
+
+    const empUpdates = empRes.data
+      .filter((e) => e.status === 'assigned' && !activeEmps.has(e.id))
+      .map((e) => empRes.update(e.id!, { status: 'available' as const }))
+    const vehUpdates = vehRes.data
+      .filter((v) => v.status === 'in_use' && !activeVehs.has(v.id))
+      .map((v) => vehRes.update(v.id!, { status: 'available' as const }))
+
+    if (empUpdates.length === 0 && vehUpdates.length === 0) return
+    void Promise.all([...empUpdates, ...vehUpdates]).catch((err: any) => {
+      setActionError(err?.message ?? String(err))
+    })
+  }, [empRes.data, vehRes.data, surveys, installs, integs, empRes.loading, vehRes.loading, survLoading, instLoading, integLoading, survErr, instErr, integErr])
 
   const addForTab = () => tab === 'survey' ? newSurvey() : tab === 'installation' ? newInstall() : newInteg()
   const errorForTab = tab === 'survey' ? survErr : tab === 'installation' ? instErr : integErr
