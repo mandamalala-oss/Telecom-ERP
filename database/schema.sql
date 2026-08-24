@@ -158,13 +158,17 @@ create table tasks (
   priority         text default 'medium' check (priority in ('low','medium','high','critical')),
   assignee_id      uuid,
   assignee_name    text,
+  start_date       date,
   due_date         date,
+  percent_complete numeric(5,1) check (percent_complete between 0 and 100),
+  milestone        boolean not null default false,
   estimated_hours  numeric(6,1) default 0,
   logged_hours     numeric(6,1) default 0,
   phase            text,
   dependencies     text[] default '{}',
   tags             text[] default '{}',
-  created_at       timestamptz default now()
+  created_at       timestamptz default now(),
+  constraint tasks_start_before_due check (start_date is null or due_date is null or start_date <= due_date)
 );
 
 -- ─── INVENTORY ──────────────────────────────────────────────────

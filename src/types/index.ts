@@ -189,9 +189,15 @@ export interface Task {
   priority: TaskPriority;
   assigneeId: string;
   assigneeName: string;
+  /** Planned start date (YYYY-MM-DD). Optional — Gantt falls back to dueDate - duration if absent. */
+  startDate?: string;
   dueDate: string;
   estimatedHours: number;
   loggedHours: number;
+  /** 0-100. Optional — Gantt derives a value from `status` if absent. */
+  percentComplete?: number;
+  /** Zero-duration marker task (diamond on the Gantt chart) e.g. "Site acceptance signed". */
+  milestone?: boolean;
   phase: ProjectPhase;
   dependencies: string[];
   tags: string[];

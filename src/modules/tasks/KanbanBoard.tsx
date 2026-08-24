@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Plus, Clock, AlertTriangle, Trash2 } from 'lucide-react'
+import { Plus, Clock, AlertTriangle, Trash2, LayoutGrid, GanttChartSquare } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
 import { TABLES } from '@/lib/api/entityConfigs'
+import { GanttChart } from './GanttChart'
 import type { Task, TaskStatus, TaskPriority, Project, User } from '@/types'
 
 const COLUMNS: { id: TaskStatus; label: string; color: string; dot: string }[] = [
@@ -38,6 +39,7 @@ export function KanbanBoard() {
   const [filterAssignee, setFilterAssignee] = useState('all')
   const [selected, setSelected] = useState<Task | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [view, setView] = useState<'kanban' | 'gantt'>('kanban')
 
   const filteredTasks = tasks.filter(t => {
     const matchProject  = filterProject === 'all' || t.projectId === filterProject
@@ -104,10 +106,23 @@ export function KanbanBoard() {
             <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
         <Button variant="secondary" icon={<Plus className="w-4 h-4"/>} onClick={openCreate}>New Task</Button>
+
+        <div className="ml-auto flex items-center gap-1 bg-slate-100 dark:bg-slate-700 rounded-lg p-1">
+          <button onClick={() => setView('kanban')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'kanban' ? 'bg-white dark:bg-slate-800 text-brand-600 shadow-sm' : 'text-slate-500'}`}>
+            <LayoutGrid className="w-3.5 h-3.5" /> Kanban
+          </button>
+          <button onClick={() => setView('gantt')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${view === 'gantt' ? 'bg-white dark:bg-slate-800 text-brand-600 shadow-sm' : 'text-slate-500'}`}>
+            <GanttChartSquare className="w-3.5 h-3.5" /> Gantt
+          </button>
+        </div>
       </div>
 
+      {view === 'gantt' && <GanttChart tasks={filteredTasks} />}
+
       {/* Kanban board */}
-      <div className="flex gap-3 overflow-x-auto pb-3" style={{ minHeight: '520px' }}>
+      {view === 'kanban' && <div className="flex gap-3 overflow-x-auto pb-3" style={{ minHeight: '520px' }}>
         {COLUMNS.map(col => {
           const colTasks = filteredTasks.filter(t => t.status === col.id)
           return (
@@ -186,7 +201,7 @@ export function KanbanBoard() {
             </div>
           )
         })}
-      </div>
+      </div>}
 
       {/* Task Detail Modal */}
       {selected && (
@@ -198,6 +213,7 @@ export function KanbanBoard() {
                 { l: 'Project',   v: selected.projectName },
                 { l: 'Phase',     v: selected.phase },
                 { l: 'Assignee',  v: selected.assigneeName },
+                { l: 'Start Date', v: selected.startDate || '—' },
                 { l: 'Due Date',  v: selected.dueDate },
                 { l: 'Est Hours', v: `${selected.estimatedHours}h` },
                 { l: 'Logged',    v: `${selected.loggedHours}h` },
