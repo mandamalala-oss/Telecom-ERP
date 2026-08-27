@@ -12,7 +12,7 @@ import { CRMModule }          from '@/modules/crm/CRMModule'
 import { CustomersModule }    from '@/modules/customers/CustomersModule'
 import { SitesModule }        from '@/modules/sites/SitesModule'
 import { ProjectsModule }     from '@/modules/projects/ProjectsModule'
-import { KanbanBoard }        from '@/modules/tasks/KanbanBoard'
+import { TaskBoard }          from '@/modules/tasks/TaskBoard'
 import { InventoryModule }    from '@/modules/inventory/InventoryModule'
 import { FinanceModule }      from '@/modules/financial/FinanceModule'
 import { EVMModule }          from '@/modules/controls/EVMModule'
@@ -94,7 +94,7 @@ export default function App() {
               <Route path="customers"  element={guard('customers', <CustomersModule />)} />
               <Route path="sites"      element={guard('sites', <SitesModule />)} />
               <Route path="projects"   element={guard('projects', <ProjectsModule />)} />
-              <Route path="tasks"      element={guard('tasks', <KanbanBoard />)} />
+              <Route path="tasks"      element={guard('tasks', <TaskBoard />)} />
               <Route path="inventory"  element={guard('inventory', <InventoryModule />)} />
               <Route path="finance"    element={guard('finance', <FinanceModule />)} />
               <Route path="evm"        element={guard('evm', <EVMModule />)} />

@@ -195,6 +195,7 @@ create table tasks (
   priority         text default 'medium' check (priority in ('low','medium','high','critical')),
   assignee_id      uuid,
   assignee_name    text,
+  start_date       date,
   due_date         date,
   estimated_hours  numeric(6,1) default 0,
   logged_hours     numeric(6,1) default 0,

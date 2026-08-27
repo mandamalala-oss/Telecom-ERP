@@ -754,3 +754,44 @@ describe('EntityFormModal — lookup filter (field-op crew)', () => {
     expect(onSubmit.mock.calls[0][0].riggerId).toBeUndefined()
   })
 })
+
+describe('EntityFormModal — cross-field validate (task dates)', () => {
+  // Mirrors the tasks FIELD_CONFIGS entry: start after due blocks the save.
+  const dateFields: FieldConfig[] = [
+    { key: 'title', label: 'Title', type: 'text', required: true },
+    { key: 'startDate', label: 'Start Date', type: 'date',
+      validate: (v) => (v.startDate && v.dueDate && v.startDate > v.dueDate
+        ? 'Start date cannot be after the due date' : null) },
+    { key: 'dueDate', label: 'Due Date', type: 'date' },
+  ]
+
+  it('blocks save when startDate > dueDate and surfaces the message', async () => {
+    const onSubmit = renderForm(dateFields)
+    await userEvent.type(screen.getByLabelText('Title'), 'Install RRU')
+    await userEvent.type(screen.getByLabelText('Start Date'), '2026-02-10')
+    await userEvent.type(screen.getByLabelText('Due Date'), '2026-02-01')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    expect(await screen.findByText('Start date cannot be after the due date')).toBeTruthy()
+    expect(onSubmit).not.toHaveBeenCalled()
+  })
+
+  it('saves when the range is valid (start ≤ due)', async () => {
+    const onSubmit = renderForm(dateFields)
+    await userEvent.type(screen.getByLabelText('Title'), 'Install RRU')
+    await userEvent.type(screen.getByLabelText('Start Date'), '2026-02-01')
+    await userEvent.type(screen.getByLabelText('Due Date'), '2026-02-10')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ startDate: '2026-02-01', dueDate: '2026-02-10' })
+  })
+
+  it('allows a task with only one date (no cross-field check applies)', async () => {
+    const onSubmit = renderForm(dateFields)
+    await userEvent.type(screen.getByLabelText('Title'), 'Legacy task')
+    await userEvent.type(screen.getByLabelText('Due Date'), '2026-02-10')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ dueDate: '2026-02-10' })
+    expect(onSubmit.mock.calls[0][0].startDate).toBeUndefined()
+  })
+})

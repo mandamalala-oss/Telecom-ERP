@@ -73,6 +73,10 @@ export interface FieldConfig {
   /** Compute derived values (e.g. totals) after any value change — merged
    * into the form values, so derived fields are never stale. */
   derive?: (values: Record<string, any>) => Record<string, any>
+  /** Cross-field check run on submit (visible fields only). Returning a
+   * non-empty string blocks the save and surfaces the message — e.g. a task
+   * whose start date is after its due date. */
+  validate?: (values: Record<string, any>) => string | null
 }
 
 /** One column of a configurable `lineItems` editor row. */
@@ -382,6 +386,16 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
     if (missing.length > 0) {
       setError(`Please fill in: ${missing.map((f) => f.label).join(', ')}`)
       return
+    }
+
+    // Cross-field validation (e.g. task start date ≤ due date).
+    for (const f of visibleFields) {
+      if (!f.validate) continue
+      const msg = f.validate(values)
+      if (msg) {
+        setError(msg)
+        return
+      }
     }
 
     setSaving(true)

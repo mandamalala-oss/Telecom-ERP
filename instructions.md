@@ -49,20 +49,32 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ---
 
-## ✅ Current state (verified 2026-08-15)
+## ✅ Current state (verified 2026-08-27)
 
-- `npm test` → **233/233 passing** (18 files)
+- `npm test` → **268/268 passing** (20 files)
 - `npx tsc --noEmit` → clean (test files are inside `src`, so they're typechecked too)
 - `npm run build` → succeeds (pre-existing chunk-size warning only, unrelated)
-- HEAD: `101afab` — **everything pushed to `origin/main`**; `git status` clean after the 2026-08-15 cleanup. (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked.)
+- HEAD: `2152590` before the Task Board Gantt work — **Milestone 20** below is committed on top; pushed to `origin/main` (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked).
 - Access model is now **grant-based (CEO-only)** — see Milestone 13 below. `ROLE_PERMISSIONS` is GONE from `src/types`; roles are labels only (DB RLS still role-scoped).
 - Finance automation + Supply/Trading projects — see **Milestone 14** below; auto-create Project from a received PO — see **Milestone 15** below (migrations 014–021 **all applied on the live DB**).
-- Live-DB probe (2026-08-15): `projects.scope_*`, `sites.means_of_transport` / `transmission_type` / `customer_*`, `boqs.network_type`, `catalog_items`, `quotes/invoices/payments.delivery_type`, and field-op crew/PM columns all exist — i.e. migrations 023–030 appear applied on live.
+- Live-DB probe (2026-08-15): `projects.scope_*`, `sites.means_of_transport` / `transmission_type` / `customer_*`, `boqs.network_type`, `catalog_items`, `quotes/invoices/payments.delivery_type`, and field-op crew/PM columns all exist — i.e. migrations 023–030 appear applied on live. **Migration 031 (tasks.start_date) is NEW — run it on the live DB before/with the Milestone 20 build.**
+- Milestone 20 changed: `src/App.tsx`, `src/modules/tasks/` (`TaskBoard.tsx` new shell, `KanbanBoard.tsx` presentational, `GanttView.tsx` new), `src/lib/taskTimeline.ts` (new) + `.test.ts`, `src/lib/api/entityConfigs.ts`, `src/types/index.ts`, `src/components/crud/EntityFormModal.tsx` + `.test.tsx`, `database/schema.sql`, `schema.sql`; new `database/migrations/031_task_gantt_dates.sql`
 - Milestone 10 changed: `src/App.tsx`, `src/contexts/AuthContext.tsx` (+`.test.tsx`), `src/components/auth/` (LoginPage + test), `src/components/layout/Header.tsx`, `database/schema.sql`, `schema.sql`; new `database/migrations/012_auth_rls.sql`
 - Milestone 8 changed: `src/components/crud/EntityFormModal.tsx` + `.test.tsx`, `src/lib/hooks/useEntityCrud.tsx`, `src/lib/api/entityConfigs.ts` + `.test.ts`, `src/lib/evm.ts` + `.test.ts`, `src/modules/controls/EVMModule.tsx`
 - Milestone 6 changed: `database/schema.sql`, `schema.sql`, `src/lib/api/entityConfigs.ts`, `src/lib/evm.ts` + `.test.ts`, `src/modules/controls/EVMModule.tsx`, `src/types/index.ts`; new `database/migrations/011_add_evm_po.sql`
-- `git status` (Milestone 5): modified `database/schema.sql`, `schema.sql`, `src/components/crud/EntityFormModal.tsx` + `.test.tsx`, `src/lib/api/entityConfigs.ts` + `.test.ts`, `src/lib/evm.ts` + `.test.ts`, `src/lib/formPayload.ts` + `.test.ts`, `src/lib/hooks/useEntityCrud.tsx`, `src/modules/{controls/EVMModule, projects/ProjectsModule}.tsx`, `src/types/index.ts`; untracked `database/migrations/009_add_project_sites.sql`, `database/migrations/010_merge_duplicate_projects.sql`
 - Git-ignored (intentional): `reasonix.toml` (tool config, never commit — added to `.gitignore` 2026-08-15). `instructions.md` is committed and kept current.
+
+### Milestone 20 — Task Board: Kanban + Gantt tabs (per user plan 2026-08-27)
+
+**One page, two tabs** (`/tasks`, route unchanged, permission key `tasks` unchanged):
+- `src/modules/tasks/TaskBoard.tsx` (new) is the shell: owns the data (`useEntityCrud`), the tab switch, ALL filters, the summary bar, the shared task detail modal (now with an **Edit** button for non-read-only users), delete and quick status moves. `KanbanBoard` became purely presentational (`tasks/onSelect/onMove/openCreate/editable`) and `GanttView` is new.
+- Shared filters: live search, project, assignee, **status** and **phase** dropdowns (AND logic). A **schedule filter** (All/Scheduled/Unscheduled/Overdue) appears on the Gantt tab only. Switching tabs never refetches.
+- `src/lib/taskTimeline.ts` (new, pure + unit-tested, 20 tests): timezone-safe date-only math on UTC epoch days, `resolveTaskDates` (status → progress 0/0/50/75/100; missing-start → 1-day bar on due date; missing-end → 1-day bar on start; no dates → unscheduled; start>due → invalidRange flagged), `timelineRange`/`barPosition`, `buildTimelineRows` (per-project groups, sorted by start→due→priority→title, unscheduled list), dependency helpers (`findDependencyCycles`, `findMissingDependencies`, `buildDependencyEdges` with violation flag).
+- `GanttView.tsx`: sticky task-info panel + scrollable timeline (month/day header, **Today** marker + scroll button, Day/Week/Month zoom = 30/16/8 px per day), collapsible project groups, status-colored bars with progress fill, priority accent stripe, overdue edge marker, dashed-amber warnings for incomplete dates, red border for invalid ranges, an "Unscheduled Tasks" group with an editable **Set dates** action, dependency connectors drawn as SVG elbows (red dashed when the predecessor ends after the successor starts). Bars/rows are keyboard-focusable (Enter/Space opens the detail modal).
+- `tasks.start_date date` (optional) — **migration `031`** (new, with `(project_id, start_date, due_date)` index), both schema files synced, `Task.startDate` type added, task form gets **Start Date** before Due Date with a cross-field check via the new generic `FieldConfig.validate` (EntityFormModal blocks submit and surfaces "Start date cannot be after the due date"; only visible fields are checked).
+- Tests: +6 TaskBoard component tests (default tab, Gantt groups/bars/unscheduled panel, shared filters, Gantt-only schedule filter, detail modal from a bar row, read-only hides New Task) + 3 EntityFormModal validate tests → **268/268**, `tsc` clean, build green.
+- Assumptions: start date optional (legacy tasks stay on a 1-day bar); progress derived from status (no separate % field); timeline is read-only for dates (no drag scheduling in v1); dependencies shown + validated but never auto-rescheduled; weekend shading skipped.
+- **Run `database/migrations/031_task_gantt_dates.sql` on the live DB** (schema.sql must NOT be re-run on live).
 
 ### Milestone 13 — Email confirmation + CEO-grant permissions (pushed `d775f06`)
 
@@ -216,6 +228,7 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 - `016_fix_users_policy_recursion.sql` — users policies via SECURITY DEFINER `app_has_role` (fixes "infinite recursion detected in policy for relation users").
 - `017_add_user_permissions.sql` — `users.permissions jsonb` (per-member None/View/Edit module checklist; Team invite creates the auth account via signUp).
 - `018_new_roles.sql` — roles → **CEO/Manager/Inspector/Team Leader**: drop old role CHECK first, migrate old roles (admin→CEO, pm/finance→Manager, engineer→Inspector, viewer→Team Leader), new CHECK + default, recreate sync trigger, re-apply all core RLS with the new names. Departments (Direction/HSE/Logistic/Project) are an app-side dropdown.
+- `031_task_gantt_dates.sql` — **NEW (2026-08-27), RUN on the live DB before deploying Milestone 20**: adds optional `tasks.start_date date` + `(project_id, start_date, due_date)` index. Idempotent (`add column if not exists`).
 - All 004–008 are **idempotent** (drop/add column if exists). 004/005/007 are destructive for the dropped columns (user-approved). The full `database/schema.sql` must **NOT** be run on the live project (it drops tables; the DB has real user data).
 
 ---
@@ -240,6 +253,8 @@ Run: `npm test` (one-shot) / `npm run test:watch`. Config: `vitest.config.ts` (d
 | `src/lib/hooks/useSupplyItems.test.ts` | Supply/trading goods lines (project_supply_items): load with client-side totals (cost/selling/margin), delete+insert save with empty-row cleaning, no-project no-op, totals math |
 | `src/lib/financeWorkflows.test.ts` | Finance automation builders: auto payment (full/partial/zero guards), PO-from-quote / invoice-from-PO mapping (status sent/draft, tax back-derive), auto-tag detection, day-prefixed unique numbering, dedup-by-notes |
 | `src/lib/evm.test.ts` | `deriveEVM`; `evFromProgress(bac, pct)`; `appendSnapshot`; `rollupCustomerEVM`; `combineEVMRecords` (sum + re-derive + benefit); `groupEVMByProject` (STARLINK-style grouping, split by customer); `mergeHistories` (same-date sum) |
+| `src/lib/taskTimeline.test.ts` | TZ-safe date helpers; `resolveTaskDates` (scheduled / missing start / missing end / unscheduled / invalidRange, overdue, status progress); `timelineRange` + `barPosition`; `buildTimelineRows` grouping + sorting; dependency cycles (incl. self), missing deps, violation edges |
+| `src/modules/tasks/TaskBoard.test.tsx` | Kanban default tab, Gantt tab renders project groups + bars + unscheduled panel, shared filters, Gantt-only schedule filter, detail modal from a bar row, read-only hides New Task |
 
 **Key runtime facts the tests encode:**
 - Lookup `valueKey`/`labelKey`/`orderBy`/`populate` values are **camelCase row keys** — rows arrive via `makeApi().list()` already `keysToCamel`'d. Tests snake-case before comparing to schema columns.

@@ -1,0 +1,248 @@
+import { useMemo, useState } from 'react'
+import { Plus, AlertTriangle, Clock, Trash2, Pencil } from 'lucide-react'
+import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
+import { Modal } from '@/components/ui/Modal'
+import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
+import { useEntity } from '@/lib/hooks/useEntity'
+import { TABLES } from '@/lib/api/entityConfigs'
+import { resolveTaskDates } from '@/lib/taskTimeline'
+import { KanbanBoard, COLUMNS, isOverdue } from './KanbanBoard'
+import { GanttView } from './GanttView'
+import type { Task, TaskStatus, Project, User } from '@/types'
+
+type Tab = 'kanban' | 'gantt'
+
+const SCHEDULE_FILTERS = [
+  { value: 'all', label: 'All schedules' },
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'unscheduled', label: 'Unscheduled' },
+  { value: 'overdue', label: 'Overdue' },
+]
+
+/**
+ * Task Board: one page, two tabs. Kanban (the classic board) and Gantt (the
+ * project timeline). Both share the same data, filters, permissions and the
+ * task detail/edit/delete modal — switching tabs never refetches.
+ */
+export function TaskBoard() {
+  const { data: tasks, error, openCreate, openEdit, remove, update, modal, editable } = useEntityCrud<Task>(TABLES.tasks, 'Task')
+  const { data: projects } = useEntity<Project>(TABLES.projects)
+  const { data: users } = useEntity<User>(TABLES.users)
+
+  const [tab, setTab] = useState<Tab>('kanban')
+  const [filterProject, setFilterProject] = useState('all')
+  const [filterAssignee, setFilterAssignee] = useState('all')
+  const [filterStatus, setFilterStatus] = useState('all')
+  const [filterPhase, setFilterPhase] = useState('all')
+  const [filterSchedule, setFilterSchedule] = useState('all')
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState<Task | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const filteredTasks = useMemo(() => tasks.filter((t) => {
+    if (filterProject !== 'all' && t.projectId !== filterProject) return false
+    if (filterAssignee !== 'all' && t.assigneeId !== filterAssignee) return false
+    if (filterStatus !== 'all' && t.status !== filterStatus) return false
+    if (filterPhase !== 'all' && t.phase !== filterPhase) return false
+    const q = search.trim().toLowerCase()
+    if (q && !`${t.title} ${t.projectName} ${t.assigneeName ?? ''}`.toLowerCase().includes(q)) return false
+    if (tab === 'gantt' && filterSchedule !== 'all') {
+      const r = resolveTaskDates(t)
+      if (filterSchedule === 'scheduled' && r.startDay == null) return false
+      if (filterSchedule === 'unscheduled' && r.startDay != null) return false
+      if (filterSchedule === 'overdue' && !r.overdue) return false
+    }
+    return true
+  }), [tasks, filterProject, filterAssignee, filterStatus, filterPhase, filterSchedule, search, tab])
+
+  const moveTask = async (taskId: string, newStatus: TaskStatus) => {
+    try {
+      setActionError(null)
+      await update(taskId, { status: newStatus } as Partial<Task>)
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this task?')) return
+    try {
+      setActionError(null)
+      await remove(id)
+      setSelected(null)
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    }
+  }
+
+  const totalHours = filteredTasks.reduce((s, t) => s + (t.estimatedHours ?? 0), 0)
+  const loggedHours = filteredTasks.reduce((s, t) => s + (t.loggedHours ?? 0), 0)
+
+  return (
+    <div className="space-y-4">
+      {/* Tabs + actions */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
+        <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg" role="tablist" aria-label="Task board view">
+          {(['kanban', 'gantt'] as Tab[]).map((t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={tab === t}
+              onClick={() => setTab(t)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded capitalize transition-all whitespace-nowrap ${
+                tab === t ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {tab === 'gantt' && (
+            <select value={filterSchedule} onChange={(e) => setFilterSchedule(e.target.value)} className="select w-40 text-sm">
+              {SCHEDULE_FILTERS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
+            </select>
+          )}
+          {editable && <Button icon={<Plus className="w-4 h-4" />} onClick={openCreate}>New Task</Button>}
+        </div>
+      </div>
+
+      {/* Summary bar */}
+      <div className="flex flex-wrap gap-4">
+        {COLUMNS.map((col) => {
+          const count = filteredTasks.filter((t) => t.status === col.id).length
+          return (
+            <div key={col.id} className="flex items-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${col.dot}`} />
+              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">{col.label}</span>
+              <span className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded-full font-bold text-slate-700 dark:text-slate-300">{count}</span>
+            </div>
+          )
+        })}
+        <div className="ml-auto flex items-center gap-3 text-xs text-slate-500">
+          <span>⏱ {loggedHours}h / {totalHours}h</span>
+          <div className="w-24 bg-slate-100 dark:bg-slate-700 rounded-full h-1.5">
+            <div className="bg-brand-500 h-1.5 rounded-full" style={{ width: `${totalHours > 0 ? Math.min(100, loggedHours / totalHours * 100) : 0}%` }} />
+          </div>
+        </div>
+      </div>
+
+      {error && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{error}</div>}
+      {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
+
+      {/* Filters */}
+      <div className="flex flex-wrap gap-3">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search tasks…"
+          aria-label="Search tasks"
+          className="input w-52 text-sm"
+        />
+        <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className="select w-56 text-sm">
+          <option value="all">All Projects</option>
+          {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select value={filterAssignee} onChange={(e) => setFilterAssignee(e.target.value)} className="select w-48 text-sm">
+          <option value="all">All Assignees</option>
+          {users.filter((u) => u.role === 'Team Leader' || u.role === 'Inspector' || u.role === 'Manager').map((u) =>
+            <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="select w-40 text-sm">
+          <option value="all">All Statuses</option>
+          {COLUMNS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+        </select>
+        <select value={filterPhase} onChange={(e) => setFilterPhase(e.target.value)} className="select w-44 text-sm">
+          <option value="all">All Phases</option>
+          {(['survey', 'installation', 'integration', 'atp', 'acceptance'] as const).map((p) =>
+            <option key={p} value={p}>{p.replace('_', ' ')}</option>)}
+        </select>
+      </div>
+
+      {tab === 'kanban' ? (
+        <KanbanBoard tasks={filteredTasks} onSelect={setSelected} onMove={moveTask} openCreate={openCreate} editable={editable} />
+      ) : (
+        <GanttView tasks={filteredTasks} onSelect={setSelected} onEdit={openEdit} editable={editable} />
+      )}
+
+      {/* Task Detail Modal — shared by both tabs */}
+      {selected && (
+        <Modal open title={selected.title} onClose={() => setSelected(null)} size="lg"
+          footer={
+            <div className="flex items-center justify-between w-full gap-3">
+              {editable ? (
+                <Button variant="secondary" icon={<Pencil className="w-4 h-4" />}
+                  onClick={() => { openEdit(selected); setSelected(null) }}>
+                  Edit
+                </Button>
+              ) : <span />}
+              <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDelete(selected.id!)}>Delete</Button>
+            </div>
+          }>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {[
+                { l: 'Project',   v: selected.projectName },
+                { l: 'Phase',     v: selected.phase },
+                { l: 'Assignee',  v: selected.assigneeName },
+                { l: 'Start',     v: selected.startDate || '—' },
+                { l: 'Due Date',  v: selected.dueDate },
+                { l: 'Est Hours', v: `${selected.estimatedHours}h` },
+                { l: 'Logged',    v: `${selected.loggedHours}h` },
+              ].map((item) => (
+                <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{item.l}</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5 capitalize">{item.v}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <Badge status={selected.status} /><Badge status={selected.priority} />
+            </div>
+            {selected.description && (
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Description</p>
+                <p className="text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3">{selected.description}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Move to</p>
+              <div className="flex flex-wrap gap-2">
+                {COLUMNS.filter((c) => c.id !== selected.status).map((c) => (
+                  <button key={c.id}
+                    onClick={() => { moveTask(selected.id!, c.id); setSelected(null) }}
+                    className="btn-secondary text-xs px-3 py-1.5">
+                    → {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {(selected.dependencies ?? []).length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Dependencies</p>
+                <div className="flex flex-wrap gap-2">
+                  {(selected.dependencies ?? []).map((dep) => {
+                    const depTask = tasks.find((t) => t.id === dep)
+                    return depTask ? (
+                      <span key={dep} className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded font-medium text-slate-600 dark:text-slate-300">
+                        {depTask.title}
+                      </span>
+                    ) : (
+                      <span key={dep} className="text-xs bg-red-50 dark:bg-red-900/30 text-red-500 px-2 py-1 rounded font-medium">
+                        Missing task {dep}
+                      </span>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {modal}
+    </div>
+  )
+}

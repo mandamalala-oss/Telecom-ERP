@@ -246,6 +246,8 @@ export interface Task {
   priority: TaskPriority;
   assigneeId: string;
   assigneeName: string;
+  /** Gantt bar start; optional — legacy tasks may only have a due date. */
+  startDate?: string;
   dueDate: string;
   estimatedHours: number;
   loggedHours: number;
