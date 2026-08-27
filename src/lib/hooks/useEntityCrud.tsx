@@ -15,7 +15,8 @@ export function useEntityCrud<T extends { id?: string }>(
   onCreated?: (row: T, values: Record<string, any>) => Promise<void>,
   transformPayload?: (values: Record<string, any>, editing: T | null) => Record<string, any>,
   onUpdated?: (row: T, values: Record<string, any>, previous: T | null) => Promise<void>,
-  modalExtraLookup?: Record<string, any[]>
+  modalExtraLookup?: Record<string, any[]>,
+  validate?: (values: Record<string, any>, editing: T | null) => string | null
 ) {
   const { canEdit } = useAuth()
   // Per-member module grant: only members with 'edit' may create/update/
@@ -86,6 +87,7 @@ export function useEntityCrud<T extends { id?: string }>(
       initial={editing ?? undefined}
       onSubmit={handleSubmit}
       extraLookup={modalExtraLookup}
+      validate={(values) => validate?.(values, editing) ?? null}
     />
   )
 

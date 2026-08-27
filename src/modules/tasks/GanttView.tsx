@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import {
   buildTimelineRows, buildDependencyEdges, parseDay, formatDay, todayISO,
-  timelineRange, barPosition, resolveTaskDates,
+  timelineRange, barPosition, resolveTaskDates, computeCriticalPath,
   type TimelineTask, type ResolvedTaskDates, type TaskScheduleStatus,
 } from '@/lib/taskTimeline'
 import type { Task, TaskStatus } from '@/types'
@@ -70,6 +70,7 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
   const [zoom, setZoom] = useState<(typeof ZOOMS)[number]['key']>('week')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [showCriticalPath, setShowCriticalPath] = useState(false)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
   const dayWidth = ZOOMS.find((z) => z.key === zoom)!.px
@@ -77,6 +78,7 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
   const { groups: projectGroups, unscheduled } = useMemo(() => buildTimelineRows(tasks), [tasks])
   const range = useMemo(() => timelineRange(tasks), [tasks])
   const edges = useMemo(() => buildDependencyEdges(tasks), [tasks])
+  const criticalPath = useMemo(() => computeCriticalPath(tasks), [tasks])
   const todayDay = parseDay(todayISO())
 
   // Flat layout (group headers + rows) shared by the left panel, the bars and
@@ -173,6 +175,14 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
           ))}
         </div>
         <Button variant="secondary" icon={<Maximize2 className="w-4 h-4" />} onClick={scrollToToday}>Today</Button>
+        <button
+          type="button"
+          aria-pressed={showCriticalPath}
+          onClick={() => setShowCriticalPath((value) => !value)}
+          className={`px-3 py-1.5 text-xs font-semibold rounded-lg border transition-colors ${showCriticalPath ? 'bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-700 dark:text-red-300' : 'border-slate-200 dark:border-slate-600 text-slate-500'}`}
+        >
+          {showCriticalPath ? 'Hide critical path' : 'Show critical path'}
+        </button>
         <div className="ml-auto flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
           {Object.entries(BAR_STYLE).map(([s, c]) => (
             <span key={s} className="flex items-center gap-1.5">
@@ -288,6 +298,9 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
                 const accent = PRIORITY_ACCENT[r.task.priority]
                 const warn = WARNING_FLAGS[r.resolved.schedule]
                 const top = HDR_H + r.y + (ROW_H - BAR_H) / 2
+                const isCritical = showCriticalPath && criticalPath.has(r.task.id!)
+                const isMilestone = !!r.task.isMilestone
+                const diamondSize = 14
                 return (
                   <div
                     key={r.task.id}
@@ -297,16 +310,22 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
                     title={tooltip(r.task)}
                     onClick={() => { setSelectedId(r.task.id!); onSelect(r.task) }}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(r.task.id!); onSelect(r.task) } }}
-                    className={`absolute overflow-hidden rounded-md cursor-pointer transition-shadow hover:shadow-md ${warn} ${selectedId === r.task.id ? 'ring-2 ring-brand-500' : ''}`}
-                    style={{ left, top, width, height: BAR_H }}
+                    className={`absolute cursor-pointer transition-shadow hover:shadow-md ${isMilestone ? 'overflow-visible' : 'overflow-hidden rounded-md'} ${warn} ${isCritical ? 'ring-2 ring-red-500' : ''} ${selectedId === r.task.id ? 'ring-2 ring-brand-500' : ''}`}
+                    style={{ left: isMilestone ? left + width / 2 - diamondSize / 2 : left, top: isMilestone ? HDR_H + r.y + (ROW_H - diamondSize) / 2 : top, width: isMilestone ? diamondSize : width, height: isMilestone ? diamondSize : BAR_H }}
                   >
-                    <div className={`h-full ${s.track}`}>
-                      <div className={`h-full ${s.fill} opacity-90`} style={{ width: `${r.resolved.progress}%` }} />
-                    </div>
-                    {accent && <div className={`absolute left-0 top-0 bottom-0 w-1 ${accent}`} />}
-                    {r.resolved.overdue && <div className="absolute right-0 top-0 bottom-0 w-1 bg-red-500" />}
-                    {(r.task.dependencies ?? []).length > 0 && width >= 40 && (
-                      <Link2 className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-white drop-shadow" />
+                    {isMilestone ? (
+                      <div className={`w-3.5 h-3.5 rotate-45 rounded-sm ${isCritical ? 'bg-red-500' : s.fill} ${selectedId === r.task.id ? 'ring-2 ring-brand-500 ring-offset-1' : ''}`} />
+                    ) : (
+                      <>
+                        <div className={`h-full ${s.track}`}>
+                          <div className={`h-full ${s.fill} opacity-90`} style={{ width: `${r.resolved.progress}%` }} />
+                        </div>
+                        {accent && <div className={`absolute left-0 top-0 bottom-0 w-1 ${accent}`} />}
+                        {r.resolved.overdue && <div className="absolute right-0 top-0 bottom-0 w-1 bg-red-500" />}
+                        {(r.task.dependencies ?? []).length > 0 && width >= 40 && (
+                          <Link2 className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-white drop-shadow" />
+                        )}
+                      </>
                     )}
                   </div>
                 )
@@ -349,6 +368,7 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
                   const toX = barBox(toBox.resolved).left
                   const fromMid = HDR_H + fromY + ROW_H / 2
                   const toMid = HDR_H + toY + ROW_H / 2
+                  const criticalEdge = showCriticalPath && criticalPath.has(e.fromId) && criticalPath.has(e.toId)
                   // Violated edges (predecessor ends after the successor
                   // starts) still render — red and dashed — so the conflict is
                   // visible instead of the connector silently vanishing.
@@ -357,8 +377,8 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
                       key={i}
                       d={`M ${fromX} ${fromMid} H ${toX} V ${toMid}`}
                       fill="none"
-                      stroke={e.violated ? '#ef4444' : '#94a3b8'}
-                      strokeWidth={1.5}
+                      stroke={e.violated || criticalEdge ? '#ef4444' : '#94a3b8'}
+                      strokeWidth={criticalEdge ? 2.5 : 1.5}
                       strokeDasharray={e.violated ? '3 2' : undefined}
                     />
                   )

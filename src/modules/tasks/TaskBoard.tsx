@@ -1,14 +1,15 @@
-import { useMemo, useState } from 'react'
-import { Plus, AlertTriangle, Clock, Trash2, Pencil } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { Plus, AlertTriangle, Clock, Trash2, Pencil, FileUp } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
-import { TABLES } from '@/lib/api/entityConfigs'
-import { resolveTaskDates } from '@/lib/taskTimeline'
+import { FIELD_CONFIGS, TABLES } from '@/lib/api/entityConfigs'
+import { dependencyCycleMessage, findDependencyCycles, findMissingDependencies, resolveTaskDates } from '@/lib/taskTimeline'
 import { KanbanBoard, COLUMNS, isOverdue } from './KanbanBoard'
 import { GanttView } from './GanttView'
+import { MSProjectImportModal } from './MSProjectImportModal'
 import type { Task, TaskStatus, Project, User } from '@/types'
 
 type Tab = 'kanban' | 'gantt'
@@ -26,7 +27,22 @@ const SCHEDULE_FILTERS = [
  * task detail/edit/delete modal — switching tabs never refetches.
  */
 export function TaskBoard() {
-  const { data: tasks, error, openCreate, openEdit, remove, update, modal, editable } = useEntityCrud<Task>(TABLES.tasks, 'Task')
+  const taskRowsRef = useRef<Task[]>([])
+  const taskValidation = (values: Record<string, any>, editing: Task | null) => {
+    const candidate = { ...(editing ?? {}), ...values, id: editing?.id ?? '__new-task__' } as Task
+    return dependencyCycleMessage(taskRowsRef.current, candidate, editing?.id)
+  }
+  const { data: tasks, error, openCreate, openEdit, create, remove, update, modal, editable } = useEntityCrud<Task>(
+    TABLES.tasks,
+    'Task',
+    FIELD_CONFIGS[TABLES.tasks],
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    taskValidation
+  )
+  taskRowsRef.current = tasks
   const { data: projects } = useEntity<Project>(TABLES.projects)
   const { data: users } = useEntity<User>(TABLES.users)
 
@@ -39,6 +55,11 @@ export function TaskBoard() {
   const [search, setSearch] = useState('')
   const [selected, setSelected] = useState<Task | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
+  const [importMessage, setImportMessage] = useState<string | null>(null)
+  const [missingDependenciesDismissed, setMissingDependenciesDismissed] = useState(false)
+
+  const missingDependencies = useMemo(() => findMissingDependencies(tasks), [tasks])
 
   const filteredTasks = useMemo(() => tasks.filter((t) => {
     if (filterProject !== 'all' && t.projectId !== filterProject) return false
@@ -76,6 +97,25 @@ export function TaskBoard() {
     }
   }
 
+  const importTasks = async (imported: Task[], unresolvedCount: number) => {
+    if (!editable) throw new Error('You do not have permission to import tasks.')
+    const importCycles = findDependencyCycles([...tasks, ...imported])
+    if (importCycles.length > 0) throw new Error('Cannot import tasks: the batch contains a dependency cycle.')
+    let importedCount = 0
+    for (const task of imported) {
+      const payload: Partial<Task> = { ...task }
+      // Blank UUID/date values are display placeholders from the parser, not
+      // valid PostgreSQL values. Let nullable columns/defaults apply instead.
+      delete payload.createdAt
+      if (!payload.startDate) delete payload.startDate
+      if (!payload.dueDate) delete payload.dueDate
+      if (!payload.assigneeId) delete payload.assigneeId
+      await create(payload)
+      importedCount++
+    }
+    setImportMessage(`${importedCount} task${importedCount === 1 ? '' : 's'} imported, ${unresolvedCount} unresolved reference${unresolvedCount === 1 ? '' : 's'}.`)
+  }
+
   const totalHours = filteredTasks.reduce((s, t) => s + (t.estimatedHours ?? 0), 0)
   const loggedHours = filteredTasks.reduce((s, t) => s + (t.loggedHours ?? 0), 0)
 
@@ -104,7 +144,10 @@ export function TaskBoard() {
               {SCHEDULE_FILTERS.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
           )}
-          {editable && <Button icon={<Plus className="w-4 h-4" />} onClick={openCreate}>New Task</Button>}
+          {editable && <>
+            <Button variant="secondary" icon={<FileUp className="w-4 h-4" />} onClick={() => { setImportMessage(null); setImportOpen(true) }}>Import from MS Project</Button>
+            <Button icon={<Plus className="w-4 h-4" />} onClick={openCreate}>New Task</Button>
+          </>}
         </div>
       </div>
 
@@ -130,6 +173,19 @@ export function TaskBoard() {
 
       {error && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{error}</div>}
       {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
+      {importMessage && <div className="text-sm text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3">{importMessage}</div>}
+      {tab === 'gantt' && !missingDependenciesDismissed && missingDependencies.size > 0 && (
+        <div className="flex items-start justify-between gap-3 text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+          <div>
+            <p className="font-semibold">Some task dependencies are unresolved.</p>
+            <p className="text-xs mt-1">{[...missingDependencies.entries()].map(([id, deps]) => {
+              const task = tasks.find((item) => item.id === id)
+              return `${task?.title ?? id}: ${deps.join(', ')}`
+            }).join(' · ')}</p>
+          </div>
+          <button className="text-xs font-semibold hover:underline flex-shrink-0" onClick={() => setMissingDependenciesDismissed(true)}>Dismiss</button>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3">
@@ -243,6 +299,14 @@ export function TaskBoard() {
       )}
 
       {modal}
+      <MSProjectImportModal
+        open={importOpen}
+        onClose={() => setImportOpen(false)}
+        projects={projects}
+        users={users}
+        defaultProjectId={filterProject === 'all' ? '' : filterProject}
+        onConfirm={importTasks}
+      />
     </div>
   )
 }

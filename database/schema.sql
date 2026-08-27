@@ -197,6 +197,7 @@ create table tasks (
   assignee_name    text,
   start_date       date,
   due_date         date,
+  is_milestone     boolean default false,
   estimated_hours  numeric(6,1) default 0,
   logged_hours     numeric(6,1) default 0,
   phase            text,

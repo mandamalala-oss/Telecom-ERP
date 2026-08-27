@@ -254,14 +254,16 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'description', label: 'Description', type: 'textarea' },
     { key: 'status', label: 'Status', type: 'select', options: ['backlog', 'todo', 'in_progress', 'review', 'done'] },
     { key: 'priority', label: 'Priority', type: 'select', options: ['low', 'medium', 'high', 'critical'] },
-    { key: 'assigneeName', label: 'Assignee', type: 'text' },
+    { key: 'assigneeId', label: 'Assignee', type: 'select', lookup: { table: 'users', valueKey: 'id', labelKey: 'name', orderBy: 'name', populate: { assigneeName: 'name' } } },
     { key: 'startDate', label: 'Start Date', type: 'date',
       validate: (v) => (v.startDate && v.dueDate && v.startDate > v.dueDate
         ? 'Start date cannot be after the due date' : null) },
     { key: 'dueDate', label: 'Due Date', type: 'date' },
-    { key: 'estimatedHours', label: 'Estimated Hours', type: 'number' },
+    { key: 'isMilestone', label: 'Milestone', type: 'checkbox' },
+    { key: 'estimatedHours', label: 'Estimated Hours', type: 'number', showWhen: (v) => !v.isMilestone },
     { key: 'loggedHours', label: 'Logged Hours', type: 'number' },
     { key: 'phase', label: 'Phase', type: 'select', options: ['survey', 'installation', 'integration', 'atp', 'acceptance'] },
+    { key: 'dependencies', label: 'Dependencies', type: 'multiSelect', lookup: { table: 'tasks', valueKey: 'id', labelKey: 'title', orderBy: 'title', filter: (row, values) => row.projectId === values?.projectId && row.id !== values?.id } },
     { key: 'tags', label: 'Tags', type: 'tags' },
   ],
   warehouses: [

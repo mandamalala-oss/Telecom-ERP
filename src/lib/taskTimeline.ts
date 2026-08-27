@@ -76,6 +76,15 @@ export function resolveTaskDates(task: Task, today = todayISO()): ResolvedTaskDa
   const hasEnd = !!task.dueDate
   const overdue = hasEnd && task.status !== 'done' && task.dueDate.slice(0, 10) < today
 
+  // A milestone is represented by one date in the timeline even if a legacy
+  // row has inconsistent dates stored underneath it.
+  if (task.isMilestone) {
+    const date = task.startDate || task.dueDate
+    if (!date) return { schedule: 'unscheduled', startDay: null, endDay: null, dayCount: 0, progress, overdue: false }
+    const day = parseDay(date)
+    return { schedule: 'scheduled', startDay: day, endDay: day, dayCount: 1, progress, overdue }
+  }
+
   if (!hasStart && !hasEnd) {
     return { schedule: 'unscheduled', startDay: null, endDay: null, dayCount: 0, progress, overdue: false }
   }
@@ -218,6 +227,17 @@ export function findDependencyCycles(tasks: Task[]): string[][] {
   return cycles
 }
 
+/** Human-readable save guard for a candidate task against the current list. */
+export function dependencyCycleMessage(tasks: Task[], candidate: Task, editingId?: string): string | null {
+  const next = editingId
+    ? tasks.map((task) => task.id === editingId ? candidate : task)
+    : [...tasks, candidate]
+  const cycles = findDependencyCycles(next)
+  if (cycles.length === 0) return null
+  const names = cycles[0].map((id) => next.find((task) => task.id === id)?.title ?? id)
+  return `Cannot save: dependency cycle detected (${names.join(' → ')})`
+}
+
 /** tasks whose `dependencies` reference ids that don't exist (anymore). */
 export function findMissingDependencies(tasks: Task[]): Map<string, string[]> {
   const ids = new Set(tasks.map((t) => t.id))
@@ -262,4 +282,68 @@ export function buildDependencyEdges(tasks: Task[]): DependencyEdge[] {
     }
   }
   return edges
+}
+
+/**
+ * Return tasks on the longest dependency chain. This is a forward/backward
+ * CPM pass over valid, date-bearing tasks; missing dependency ids are ignored
+ * here (the UI reports them separately) and cycles return an empty set.
+ */
+export function computeCriticalPath(tasks: Task[]): Set<string> {
+  const nodes = tasks
+    .filter((task) => task.id && resolveTaskDates(task).startDay != null && resolveTaskDates(task).schedule !== 'invalidRange')
+    .map((task) => ({ task, resolved: resolveTaskDates(task) }))
+  const ids = new Set(nodes.map(({ task }) => task.id!))
+  const byId = new Map(nodes.map(({ task, resolved }) => [task.id!, { task, resolved }]))
+  const successors = new Map<string, string[]>()
+  const indegree = new Map<string, number>()
+  for (const id of ids) { successors.set(id, []); indegree.set(id, 0) }
+  for (const { task } of nodes) {
+    for (const dependency of task.dependencies ?? []) {
+      if (!ids.has(dependency)) continue
+      successors.get(dependency)!.push(task.id!)
+      indegree.set(task.id!, indegree.get(task.id!)! + 1)
+    }
+  }
+
+  const queue = [...ids].filter((id) => indegree.get(id) === 0)
+  const order: string[] = []
+  while (queue.length > 0) {
+    const id = queue.shift()!
+    order.push(id)
+    for (const successor of successors.get(id) ?? []) {
+      const next = indegree.get(successor)! - 1
+      indegree.set(successor, next)
+      if (next === 0) queue.push(successor)
+    }
+  }
+  if (order.length !== ids.size) return new Set()
+
+  const earliestStart = new Map<string, number>()
+  const earliestFinish = new Map<string, number>()
+  for (const id of order) {
+    const predecessors = byId.get(id)!.task.dependencies ?? []
+    const start = Math.max(0, ...predecessors
+      .filter((dependency) => ids.has(dependency))
+      .map((dependency) => earliestFinish.get(dependency) ?? 0))
+    const finish = start + byId.get(id)!.resolved.dayCount
+    earliestStart.set(id, start)
+    earliestFinish.set(id, finish)
+  }
+
+  const projectFinish = Math.max(...order.map((id) => earliestFinish.get(id)!))
+  const latestFinish = new Map<string, number>()
+  const latestStart = new Map<string, number>()
+  for (const id of [...order].reverse()) {
+    const nextStarts = (successors.get(id) ?? []).map((successor) => latestStart.get(successor)!)
+    const finish = nextStarts.length > 0 ? Math.min(...nextStarts) : projectFinish
+    latestFinish.set(id, finish)
+    latestStart.set(id, finish - byId.get(id)!.resolved.dayCount)
+  }
+
+  const critical = new Set<string>()
+  for (const id of order) {
+    if (latestStart.get(id)! - earliestStart.get(id)! === 0) critical.add(id)
+  }
+  return critical
 }

@@ -3,6 +3,8 @@ import {
   parseDay, formatDay, addDays, todayISO, daysBetween,
   resolveTaskDates, timelineRange, barPosition, buildTimelineRows,
   findDependencyCycles, findMissingDependencies, buildDependencyEdges,
+  computeCriticalPath,
+  dependencyCycleMessage,
 } from './taskTimeline'
 import type { Task } from '@/types'
 
@@ -173,6 +175,13 @@ describe('dependency helpers', () => {
     expect(self[0]).toEqual(['x', 'x'])
   })
 
+  it('returns a clear message for a candidate that introduces a cycle', () => {
+    const existing = [makeTask({ id: 'a', title: 'Survey', dependencies: ['b'] }), makeTask({ id: 'b', title: 'Install' })]
+    const candidate = makeTask({ id: 'b', title: 'Install', dependencies: ['a'] })
+    expect(dependencyCycleMessage(existing, candidate, 'b')).toContain('Survey')
+    expect(dependencyCycleMessage(existing, makeTask({ id: 'c', dependencies: [] }), undefined)).toBeNull()
+  })
+
   it('reports only dependencies on missing tasks', () => {
     const missing = findMissingDependencies([makeTask({ id: 'a', dependencies: ['gone'] })])
     expect(missing.get('a')).toEqual(['gone'])
@@ -194,5 +203,15 @@ describe('dependency helpers', () => {
       makeTask({ id: 'post', title: 'Post', dependencies: ['pre'], startDate: '2026-01-11', dueDate: '2026-01-15' }),
     ])
     expect(ok[0].violated).toBe(false)
+  })
+
+  it('computes the longest zero-slack dependency chain', () => {
+    const tasks = [
+      makeTask({ id: 'a', startDate: '2026-01-01', dueDate: '2026-01-03' }),
+      makeTask({ id: 'b', startDate: '2026-01-04', dueDate: '2026-01-07', dependencies: ['a'] }),
+      makeTask({ id: 'short', startDate: '2026-01-01', dueDate: '2026-01-01' }),
+    ]
+    expect(computeCriticalPath(tasks)).toEqual(new Set(['a', 'b']))
+    expect(computeCriticalPath([{ ...tasks[0], dependencies: ['b'] }, tasks[1]])).toEqual(new Set())
   })
 })

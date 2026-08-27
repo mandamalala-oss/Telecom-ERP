@@ -249,6 +249,7 @@ export interface Task {
   /** Gantt bar start; optional — legacy tasks may only have a due date. */
   startDate?: string;
   dueDate: string;
+  isMilestone?: boolean;
   estimatedHours: number;
   loggedHours: number;
   phase: ProjectPhase;

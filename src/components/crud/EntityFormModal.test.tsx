@@ -795,3 +795,23 @@ describe('EntityFormModal — cross-field validate (task dates)', () => {
     expect(onSubmit.mock.calls[0][0].startDate).toBeUndefined()
   })
 })
+
+describe('EntityFormModal — milestone form behavior', () => {
+  const fields: FieldConfig[] = [
+    { key: 'startDate', label: 'Start Date', type: 'date' },
+    { key: 'dueDate', label: 'Due Date', type: 'date' },
+    { key: 'isMilestone', label: 'Milestone', type: 'checkbox' },
+    { key: 'estimatedHours', label: 'Estimated Hours', type: 'number', showWhen: (v) => !v.isMilestone },
+  ]
+
+  it('hides estimated hours and keeps milestone dates equal', async () => {
+    const onSubmit = renderForm(fields)
+    await userEvent.type(screen.getByLabelText('Start Date'), '2026-03-10')
+    await userEvent.click(screen.getByLabelText('Milestone'))
+    expect(screen.queryByLabelText('Estimated Hours')).toBeNull()
+    expect((screen.getByLabelText('Due Date') as HTMLInputElement).value).toBe('2026-03-10')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ startDate: '2026-03-10', dueDate: '2026-03-10', isMilestone: true })
+  })
+})

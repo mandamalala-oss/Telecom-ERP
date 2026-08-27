@@ -27,7 +27,7 @@ export interface LookupConfig {
   populate?: Record<string, string>
   /** Client-side predicate applied to the fetched rows — e.g. show only
    * `team_leader` employees in the "Team Leader" dropdown. */
-  filter?: (row: any) => boolean
+  filter?: (row: any, values?: Record<string, any>) => boolean
 }
 
 export interface FieldConfig {
@@ -99,6 +99,8 @@ interface Props {
   onSubmit: (values: Record<string, any>) => Promise<void>
   /** Extra lookup rows supplied by the module (e.g. projects/sites/junction) — merged over auto-fetched options. */
   extraLookup?: Record<string, any[]>
+  /** Optional form-level validation supplied by a module. */
+  validate?: (values: Record<string, any>) => string | null
 }
 
 // Default line-item columns (finance quote/invoice/PO shape).
@@ -150,7 +152,7 @@ export function applyDerived(fields: FieldConfig[], values: Record<string, any>)
 // One generic, config-driven form used to create/edit records for every
 // module — keeps every entity's Create/Edit UX consistent and avoids
 // bespoke forms per module while still covering its real fields.
-export function EntityFormModal({ open, onClose, title, fields, initial, onSubmit, extraLookup }: Props) {
+export function EntityFormModal({ open, onClose, title, fields, initial, onSubmit, extraLookup, validate }: Props) {
   const [values, setValues] = useState<Record<string, any>>(() => buildInitial(fields, initial))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -165,7 +167,11 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   // pruneConditional also guards against rows whose stored sub-fields
   // disagree with their selectors (only writable via direct SQL).
   useEffect(() => {
-    if (open) setValues(applyDerived(fields, pruneConditional(fields, buildInitial(fields, initial))))
+    if (open) {
+      const seeded = buildInitial(fields, initial)
+      if (seeded.isMilestone && seeded.startDate) seeded.dueDate = seeded.startDate
+      setValues(applyDerived(fields, pruneConditional(fields, seeded)))
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
@@ -191,7 +197,17 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   if (!open) return null
 
   const set = (k: string, v: any) =>
-    setValues((prev) => applyDerived(fields, pruneConditional(fields, { ...prev, [k]: v })))
+    setValues((prev) => {
+      const next = { ...prev, [k]: v }
+      // Milestones have zero duration: editing either date keeps the pair
+      // synchronized, while enabling the checkbox copies an existing start.
+      if (next.isMilestone && (k === 'isMilestone' || k === 'startDate' || k === 'dueDate')) {
+        if (k === 'dueDate' && v) next.startDate = v
+        else if (k === 'startDate' && v) next.dueDate = v
+        else if (k === 'isMilestone' && v && next.startDate) next.dueDate = next.startDate
+      }
+      return applyDerived(fields, pruneConditional(fields, next))
+    })
 
   // Only fields whose conditional section is active are rendered + validated;
   // switching a selector prunes the stale sub-field values (see set).
@@ -313,7 +329,10 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   // Lookup rows for a field, with its optional client-side filter applied.
   const lookupRows = (f: FieldConfig) => {
     const rows = allOptions[f.lookup!.table] ?? []
-    return f.lookup!.filter ? rows.filter(f.lookup!.filter) : rows
+    // Keep the editing record id and hidden lookup-populated FKs available to
+    // dynamic filters without adding either value to the saved payload.
+    const filterValues = { ...values, id: values.id ?? initial?.id, projectId: values.projectId ?? initial?.projectId }
+    return f.lookup!.filter ? rows.filter((row) => f.lookup!.filter!(row, filterValues)) : rows
   }
 
   const handleLookupChange = (f: FieldConfig, value: string) => {
@@ -385,6 +404,12 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
     )
     if (missing.length > 0) {
       setError(`Please fill in: ${missing.map((f) => f.label).join(', ')}`)
+      return
+    }
+
+    const formError = validate?.(values)
+    if (formError) {
+      setError(formError)
       return
     }
 

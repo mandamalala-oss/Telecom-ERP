@@ -51,13 +51,14 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 
 ## ✅ Current state (verified 2026-08-27)
 
-- `npm test` → **268/268 passing** (20 files)
+- `npm test` → **275/275 passing** (21 files)
 - `npx tsc --noEmit` → clean (test files are inside `src`, so they're typechecked too)
 - `npm run build` → succeeds (pre-existing chunk-size warning only, unrelated)
-- HEAD: `2152590` before the Task Board Gantt work — **Milestone 20** below is committed on top; pushed to `origin/main` (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked).
+- HEAD: `2152590` before the Task Board Gantt work — **Milestone 20** below is committed on top; **Milestone 21** (MS Project import + milestones + critical path) is committed after it; both pushed to `origin/main` (Vercel auto-deploys; commit email `fjakoba@gmail.com` matches the GitHub account so deployments aren't blocked).
 - Access model is now **grant-based (CEO-only)** — see Milestone 13 below. `ROLE_PERMISSIONS` is GONE from `src/types`; roles are labels only (DB RLS still role-scoped).
 - Finance automation + Supply/Trading projects — see **Milestone 14** below; auto-create Project from a received PO — see **Milestone 15** below (migrations 014–021 **all applied on the live DB**).
-- Live-DB probe (2026-08-15): `projects.scope_*`, `sites.means_of_transport` / `transmission_type` / `customer_*`, `boqs.network_type`, `catalog_items`, `quotes/invoices/payments.delivery_type`, and field-op crew/PM columns all exist — i.e. migrations 023–030 appear applied on live. **Migration 031 (tasks.start_date) is NEW — run it on the live DB before/with the Milestone 20 build.**
+- Live-DB probe (2026-08-15): `projects.scope_*`, `sites.means_of_transport` / `transmission_type` / `customer_*`, `boqs.network_type`, `catalog_items`, `quotes/invoices/payments.delivery_type`, and field-op crew/PM columns all exist — i.e. migrations 023–030 appear applied on live. **Migration 031 (tasks.start_date) + 032 (tasks.is_milestone) are NEW — run them on the live DB before/with the Milestone 20/21 build.**
+- Milestone 21 changed: `src/lib/msProjectImport.ts` (new) + `.test.ts`, `src/modules/tasks/MSProjectImportModal.tsx` (new), `src/modules/tasks/TaskBoard.tsx`, `src/modules/tasks/GanttView.tsx`, `src/lib/taskTimeline.ts` + `.test.ts`, `src/lib/api/entityConfigs.ts`, `src/components/crud/EntityFormModal.tsx` + `.test.tsx`, `src/lib/hooks/useEntityCrud.tsx`, `src/types/index.ts`, `database/schema.sql`, `schema.sql`; new `database/migrations/032_task_milestones.sql`; new `gantt-msproject-import-plan.md` (tracked spec)
 - Milestone 20 changed: `src/App.tsx`, `src/modules/tasks/` (`TaskBoard.tsx` new shell, `KanbanBoard.tsx` presentational, `GanttView.tsx` new), `src/lib/taskTimeline.ts` (new) + `.test.ts`, `src/lib/api/entityConfigs.ts`, `src/types/index.ts`, `src/components/crud/EntityFormModal.tsx` + `.test.tsx`, `database/schema.sql`, `schema.sql`; new `database/migrations/031_task_gantt_dates.sql`
 - Milestone 10 changed: `src/App.tsx`, `src/contexts/AuthContext.tsx` (+`.test.tsx`), `src/components/auth/` (LoginPage + test), `src/components/layout/Header.tsx`, `database/schema.sql`, `schema.sql`; new `database/migrations/012_auth_rls.sql`
 - Milestone 8 changed: `src/components/crud/EntityFormModal.tsx` + `.test.tsx`, `src/lib/hooks/useEntityCrud.tsx`, `src/lib/api/entityConfigs.ts` + `.test.ts`, `src/lib/evm.ts` + `.test.ts`, `src/modules/controls/EVMModule.tsx`
@@ -75,6 +76,18 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 - Tests: +6 TaskBoard component tests (default tab, Gantt groups/bars/unscheduled panel, shared filters, Gantt-only schedule filter, detail modal from a bar row, read-only hides New Task) + 3 EntityFormModal validate tests → **268/268**, `tsc` clean, build green.
 - Assumptions: start date optional (legacy tasks stay on a 1-day bar); progress derived from status (no separate % field); timeline is read-only for dates (no drag scheduling in v1); dependencies shown + validated but never auto-rescheduled; weekend shading skipped.
 - **Run `database/migrations/031_task_gantt_dates.sql` on the live DB** (schema.sql must NOT be re-run on live).
+
+### Milestone 21 — MS Project CSV import + milestones + critical path (per `gantt-msproject-import-plan.md`, 2026-08-27)
+
+- **`src/lib/msProjectImport.ts`** (new, pure + 4 unit tests): RFC 4180 CSV parser (quoted commas/newlines), locale-aware date parsing (`dmy` default, `mdy` toggle), two-pass predecessor resolution (`"3,5FS+2 days"` → keeps `3`,`5` only), `% Complete` → nearest of the 5 status buckets, `Duration = 0` → `isMilestone`, `Resource Names` → first name to `assigneeId/assigneeName` (extra names appended to `description`, never dropped), summary/blank rows skipped, invalid dates reported without failing the batch, unresolved deps/assignees returned separately.
+- **`src/modules/tasks/MSProjectImportModal.tsx`** (new): "Import from MS Project" button on the Task Board header → modal with export instructions, project picker (pre-filled from the active project filter), phase picker (single phase for the batch), date-locale toggle, a preview table (Name/Start/Finish/Status/Assignee/Predecessors) and an unresolved-references warning block before committing. Confirm inserts via `useEntityCrud.create`; blank uuid/date fields are stripped before write.
+- **Milestones** (`tasks.is_milestone`, migration 032, `Task.isMilestone`): form checkbox hides Estimated Hours (`showWhen`); dates stay in sync while enabled; `resolveTaskDates` treats a milestone as a 1-day bar; `GanttView` renders it as a rotated diamond instead of a bar.
+- **Critical path**: `computeCriticalPath(tasks)` (forward/backward pass over valid date-bearing tasks; returns empty on cycles) + a "Show critical path" toggle that outlines critical bars and thickens/reddens their connectors.
+- **Dependency integrity**: `dependencyCycleMessage()` (new helper) + form-level validation — `useEntityCrud` gained a `validate` prop and `FieldConfig.lookup.filter` gained `(row, values)` so the task form's Dependencies multi-select is scoped to the same `projectId` and excludes the task itself; saving a cycle is blocked with a clear message. Imports are also cycle-checked. The Gantt tab shows a dismissible banner for dangling dependency ids (`findMissingDependencies`).
+- **Task form**: Assignee is now a lookup (`users` → `assigneeId` + populate `assigneeName`), plus the existing Start/Due/phase/priority/hours. This closes "form exposes all Gantt-relevant fields".
+- Tests: +3 msProjectImport, +2 taskTimeline (cycle message + critical path), +1 EntityFormModal milestone → **275/275**, `tsc` clean, build green.
+- Assumptions: dependencies stay `string[]` (lag support in #6 is still open, not implemented); import inserts sequentially through the generic CRUD layer (not a single bulk RPC) so each row still passes RLS/edits; critical path uses day durations, ignoring calendar dates.
+- **Run `database/migrations/032_task_milestones.sql` on the live DB** (idempotent).
 
 ### Milestone 13 — Email confirmation + CEO-grant permissions (pushed `d775f06`)
 
@@ -228,7 +241,8 @@ Projects page gains a filter bar between the summary cards and the status tabs: 
 - `016_fix_users_policy_recursion.sql` — users policies via SECURITY DEFINER `app_has_role` (fixes "infinite recursion detected in policy for relation users").
 - `017_add_user_permissions.sql` — `users.permissions jsonb` (per-member None/View/Edit module checklist; Team invite creates the auth account via signUp).
 - `018_new_roles.sql` — roles → **CEO/Manager/Inspector/Team Leader**: drop old role CHECK first, migrate old roles (admin→CEO, pm/finance→Manager, engineer→Inspector, viewer→Team Leader), new CHECK + default, recreate sync trigger, re-apply all core RLS with the new names. Departments (Direction/HSE/Logistic/Project) are an app-side dropdown.
-- `031_task_gantt_dates.sql` — **NEW (2026-08-27), RUN on the live DB before deploying Milestone 20**: adds optional `tasks.start_date date` + `(project_id, start_date, due_date)` index. Idempotent (`add column if not exists`).
+- `031_task_gantt_dates.sql` — adds optional `tasks.start_date date` + `(project_id, start_date, due_date)` index. Idempotent (`add column if not exists`).
+- `032_task_milestones.sql` — **NEW (2026-08-27), RUN on the live DB**: adds `tasks.is_milestone boolean default false`, backfills NULLs, then sets it `not null`. Idempotent.
 - All 004–008 are **idempotent** (drop/add column if exists). 004/005/007 are destructive for the dropped columns (user-approved). The full `database/schema.sql` must **NOT** be run on the live project (it drops tables; the DB has real user data).
 
 ---
@@ -255,6 +269,7 @@ Run: `npm test` (one-shot) / `npm run test:watch`. Config: `vitest.config.ts` (d
 | `src/lib/evm.test.ts` | `deriveEVM`; `evFromProgress(bac, pct)`; `appendSnapshot`; `rollupCustomerEVM`; `combineEVMRecords` (sum + re-derive + benefit); `groupEVMByProject` (STARLINK-style grouping, split by customer); `mergeHistories` (same-date sum) |
 | `src/lib/taskTimeline.test.ts` | TZ-safe date helpers; `resolveTaskDates` (scheduled / missing start / missing end / unscheduled / invalidRange, overdue, status progress); `timelineRange` + `barPosition`; `buildTimelineRows` grouping + sorting; dependency cycles (incl. self), missing deps, violation edges |
 | `src/modules/tasks/TaskBoard.test.tsx` | Kanban default tab, Gantt tab renders project groups + bars + unscheduled panel, shared filters, Gantt-only schedule filter, detail modal from a bar row, read-only hides New Task |
+| `src/lib/msProjectImport.test.ts` | CSV parser (quoted commas/escapes/newlines), field mapping + two-pass predecessor resolution + resource mapping, mdy locale + zero-duration milestone detection, blank-row skip + invalid-date reporting |
 
 **Key runtime facts the tests encode:**
 - Lookup `valueKey`/`labelKey`/`orderBy`/`populate` values are **camelCase row keys** — rows arrive via `makeApi().list()` already `keysToCamel`'d. Tests snake-case before comparing to schema columns.
