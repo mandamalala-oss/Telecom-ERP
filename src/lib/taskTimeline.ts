@@ -176,6 +176,8 @@ export function buildTimelineRows(tasks: Task[]): { groups: TaskGroup[]; unsched
     group.tasks.push(rt)
   }
   for (const g of groups) {
+    // Sort siblings first (start/due/priority/title), then nest children under
+    // their parents so the timeline shows a proper outline (parents first).
     g.tasks.sort((a, b) => {
       const d = (a.resolved.startDay ?? 0) - (b.resolved.startDay ?? 0)
       if (d !== 0) return d
@@ -185,8 +187,10 @@ export function buildTimelineRows(tasks: Task[]): { groups: TaskGroup[]; unsched
       if (p !== 0) return p
       return a.task.title.localeCompare(b.task.title)
     })
+    const byId = new Map(g.tasks.map((rt) => [rt.task.id!, rt]))
+    g.tasks = orderByHierarchy(g.tasks.map((rt) => rt.task)).map((t) => byId.get(t.id!)!).filter(Boolean)
   }
-  return { groups, unscheduled }
+  return { groups, unscheduled: orderByHierarchy(unscheduled.map((rt) => rt.task)).map((t) => unscheduled.find((rt) => rt.task.id === t.id)!) }
 }
 
 // ── Task hierarchy (parent/child) ───────────────────────────────────────────
@@ -233,6 +237,96 @@ export function buildTaskHierarchy(tasks: { id?: string; parentId?: string }[]):
 
   for (const task of tasks) if (task.id) getDepth(task.id)
   return { depth, children }
+}
+
+// ── Summary rollup (parent tasks behave like MS Project summaries) ─────────
+
+/** A parent/summary task's status is derived from its children, not set by
+ * hand: done only when every child is done, todo while nothing has started,
+ * review when all children are in review, otherwise in progress. */
+export function rollupStatus(statuses: TaskStatus[]): TaskStatus {
+  if (statuses.length === 0) return 'todo'
+  if (statuses.every((s) => s === 'done')) return 'done'
+  if (statuses.every((s) => s === 'backlog' || s === 'todo')) return 'todo'
+  if (statuses.every((s) => s === 'review')) return 'review'
+  return 'in_progress'
+}
+
+export interface TaskRollup {
+  /** Effective status: the task's own for a leaf, rolled up for a parent. */
+  status: TaskStatus
+  /** Effective cost: own cost for a leaf, sum of descendants for a parent. */
+  cost: number
+  /** People assigned across the subtree (deduped, order of first appearance). */
+  resources: string[]
+  /** True when the task has subtasks (renders as an MS Project summary). */
+  isParent: boolean
+}
+
+/**
+ * Compute per-task rollups (status/cost/resources/isParent) in one memoized
+ * pass. Leaf values come from the task itself; parent values aggregate their
+ * children recursively. Cyclic parent links are guarded and treated as leaves.
+ */
+export function computeTaskRollups(tasks: Task[]): Map<string, TaskRollup> {
+  const { children } = buildTaskHierarchy(tasks)
+  const byId = new Map(tasks.map((t) => [t.id!, t]))
+  const memo = new Map<string, TaskRollup>()
+  const visiting = new Set<string>()
+
+  const rollup = (id: string): TaskRollup => {
+    if (memo.has(id)) return memo.get(id)!
+    const task = byId.get(id)
+    const kids = children.get(id) ?? []
+    if (kids.length === 0 || visiting.has(id)) {
+      const r: TaskRollup = {
+        status: task?.status ?? 'todo',
+        cost: task?.cost ?? 0,
+        resources: task?.assigneeName ? [task.assigneeName] : [],
+        isParent: kids.length > 0,
+      }
+      memo.set(id, r)
+      return r
+    }
+    visiting.add(id)
+    const childRollups = kids.map((k) => rollup(k))
+    visiting.delete(id)
+    const r: TaskRollup = {
+      status: rollupStatus(childRollups.map((c) => c.status)),
+      cost: childRollups.reduce((sum, c) => sum + c.cost, 0),
+      resources: [...new Set(childRollups.flatMap((c) => c.resources))],
+      isParent: true,
+    }
+    memo.set(id, r)
+    return r
+  }
+
+  for (const task of tasks) if (task.id) rollup(task.id)
+  return memo
+}
+
+/**
+ * Order tasks so every parent is immediately followed by its subtasks (a
+ * depth-first outline walk). Sibling order is preserved (callers pre-sort by
+ * date/priority first). Tasks whose parent is missing become roots; cyclic
+ * links are emitted once to avoid an infinite loop.
+ */
+export function orderByHierarchy<T extends { id?: string; parentId?: string }>(tasks: T[]): T[] {
+  const { children } = buildTaskHierarchy(tasks)
+  const byId = new Map(tasks.map((t) => [t.id!, t]))
+  const roots = tasks.filter((t) => !t.parentId || !byId.has(t.parentId)).map((t) => t.id!)
+  const result: T[] = []
+  const visited = new Set<string>()
+  const visit = (id: string) => {
+    if (visited.has(id)) return
+    visited.add(id)
+    const task = byId.get(id)
+    if (task) result.push(task)
+    for (const childId of children.get(id) ?? []) visit(childId)
+  }
+  for (const id of roots) visit(id)
+  for (const task of tasks) if (!visited.has(task.id!)) result.push(task)
+  return result
 }
 
 // ── Dependencies ────────────────────────────────────────────────────────────

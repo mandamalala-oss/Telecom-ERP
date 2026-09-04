@@ -77,6 +77,7 @@ describe('parseMSProjectXML', () => {
     <Task><UID>2</UID><Name>PREPARATION</Name><OutlineLevel>2</OutlineLevel><Summary>0</Summary>
       <Start>2026-06-01T07:00:00</Start><Finish>2026-06-01T17:00:00</Finish>
       <PercentComplete>100</PercentComplete><Duration>PT9H0M0S</Duration><Milestone>0</Milestone>
+      <Cost>1000</Cost>
     </Task>
     <Task><UID>3</UID><Name>TRAVEL &amp; CAR</Name><OutlineLevel>2</OutlineLevel><Summary>0</Summary>
       <Start>2026-06-02T07:00:00</Start><Finish>2026-06-03T17:00:00</Finish>
@@ -128,7 +129,7 @@ describe('parseMSProjectXML', () => {
 
     expect(preparation).toMatchObject({
       startDate: '2026-06-01', dueDate: '2026-06-01', status: 'done',
-      assigneeId: 'u1', assigneeName: 'Alice Leader',
+      assigneeId: 'u1', assigneeName: 'Alice Leader', cost: 1000,
     })
     // Material resource (FUEL) is not an assignee; only the person is mapped.
     expect(preparation.description).not.toContain('FUEL')

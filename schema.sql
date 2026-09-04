@@ -200,6 +200,7 @@ create table tasks (
   is_milestone     boolean default false,
   estimated_hours  numeric(6,1) default 0,
   logged_hours     numeric(6,1) default 0,
+  cost             numeric(14,2) default 0,
   phase            text,
   parent_id        uuid references tasks(id) on delete cascade,
   dependencies     text[] default '{}',

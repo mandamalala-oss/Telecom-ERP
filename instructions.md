@@ -106,6 +106,13 @@ The import format switched from **MS Project CSV to the real MS Project XML file
 - **Indentation**: `buildTaskHierarchy` (new pure helper in `taskTimeline.ts`) computes depth + children from `parentId` (cycle-guarded). The preview indents rows by depth and bolds summary parents; the **Gantt** indents task rows and bolds parents; the **task detail modal** shows the parent task and a clickable Subtasks list.
 - Tests: +2 `buildTaskHierarchy` (depths/children + cycle), +1 XML assignments breakdown, updated unresolved-assignee assertion → **282/282**, `tsc` clean, build green.
 
+**Follow-up (same day): parent/summary tasks behave like MS Project.** Summary tasks are no longer moved or "todo/in progress" by hand — they roll up automatically from their subtasks:
+- `tasks.cost` (migration **034**) + `Task.cost`; `parseMSProjectXML` reads `<Cost>`. `computeTaskRollups` (taskTimeline) derives, per task: **status** (`rollupStatus`: all done → done, none started → todo, all review → review, else in progress), **cost** (sum of descendants), and **resources** (deduped assignees across the subtree); `isParent` flags summary rows.
+- **Gantt**: parents render as an MS Project **summary bar** (dark horizontal line with downward end caps) instead of the normal status bar; bar color/progress use the rolled-up status; rows show rolled-up resources + cost. `buildTimelineRows` now nests subtasks under their parent (`orderByHierarchy`) so indentation is properly aligned.
+- **Kanban**: a parent card sits in its rolled-up-status column, carries a "SUMMARY · auto" tag, and hides the quick-move buttons (status is auto). **Task detail**: shows the rolled-up status ("Summary · auto"), cost, resources and subtasks, and hides "Move to" for parents.
+- Tests: +5 (rollupStatus, computeTaskRollups, orderByHierarchy, buildTimelineRows nesting, cost parse) → **286/286**, `tsc` clean, build green.
+- **Run `database/migrations/034_task_cost.sql` on the live DB** (idempotent).
+
 ### Milestone 13 — Email confirmation + CEO-grant permissions (pushed `d775f06`)
 
 **Email confirmation flow** (works on localhost AND Vercel):

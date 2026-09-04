@@ -5,13 +5,15 @@ import { Button } from '@/components/ui/Button'
 import {
   buildTimelineRows, buildDependencyEdges, parseDay, formatDay, todayISO,
   timelineRange, barPosition, resolveTaskDates, computeCriticalPath, buildTaskHierarchy,
-  type TimelineTask, type ResolvedTaskDates, type TaskScheduleStatus,
+  STATUS_PROGRESS,
+  type TimelineTask, type ResolvedTaskDates, type TaskScheduleStatus, type TaskRollup,
 } from '@/lib/taskTimeline'
 import type { Task, TaskStatus } from '@/types'
 
 const ROW_H = 40
 const GROUP_H = 32
 const BAR_H = 22
+const SUMMARY_H = 10
 const HDR_H = 44
 const LEFT_W = 300
 
@@ -52,6 +54,8 @@ const fmtDay = (iso: string) =>
 const fmtMonth = (iso: string) =>
   new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString('en', { month: 'short', year: 'numeric', timeZone: 'UTC' })
 
+const fmtMoney = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M Ar` : `${n.toLocaleString()} Ar`)
+
 interface GanttViewProps {
   tasks: Task[]
   /** Open the shared task detail modal. */
@@ -59,6 +63,8 @@ interface GanttViewProps {
   /** Open the shared task edit form (e.g. "Set dates" from an unscheduled row). */
   onEdit: (task: Task) => void
   editable: boolean
+  /** Per-task rollups; parents render as MS Project summaries. */
+  rollups?: Map<string, TaskRollup>
 }
 
 /** Rows and their y offsets inside the timeline, computed in one pass so the
@@ -66,7 +72,7 @@ interface GanttViewProps {
 interface LayoutRow { task: Task; resolved: ReturnType<typeof resolveTaskDates>; groupKey: string; y: number }
 interface LayoutGroup { key: string; name: string; y: number; rowCount: number; collapsed: boolean }
 
-export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps) {
+export function GanttView({ tasks, onSelect, onEdit, editable, rollups }: GanttViewProps) {
   const [zoom, setZoom] = useState<(typeof ZOOMS)[number]['key']>('week')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -81,6 +87,10 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
   const criticalPath = useMemo(() => computeCriticalPath(tasks), [tasks])
   const hierarchy = useMemo(() => buildTaskHierarchy(tasks), [tasks])
   const todayDay = parseDay(todayISO())
+
+  const statusOf = (task: Task): TaskStatus => rollups?.get(task.id!)?.status ?? task.status
+  const costOf = (task: Task): number => rollups?.get(task.id!)?.cost ?? (task.cost ?? 0)
+  const isParent = (task: Task): boolean => rollups?.get(task.id!)?.isParent ?? (hierarchy.children.get(task.id!) ?? []).length > 0
 
   // Flat layout (group headers + rows) shared by the left panel, the bars and
   // the connectors. The unscheduled list renders as a final "Unscheduled
@@ -138,9 +148,10 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
 
   const tooltip = (t: Task): string => {
     const r = resolveTaskDates(t)
+    const status = statusOf(t)
     const lines = [t.title]
     if (t.projectName) lines.push(`Project: ${t.projectName}`)
-    lines.push(`Status: ${t.status.replace(/_/g, ' ')} · ${r.progress}%`)
+    lines.push(`Status: ${status.replace(/_/g, ' ')} · ${STATUS_PROGRESS[status]}%`)
     if (t.startDate) lines.push(`Start: ${fmtDay(t.startDate)}`)
     if (t.dueDate) lines.push(`Due: ${fmtDay(t.dueDate)}${r.overdue ? ' (overdue)' : ''}`)
     if (r.schedule === 'missingStart') lines.push('⚠ No start date — bar sits on the due date')
@@ -218,6 +229,9 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
                     .map((r) => {
                       const depth = hierarchy.depth.get(r.task.id!) ?? 0
                       const hasChildren = (hierarchy.children.get(r.task.id!) ?? []).length > 0
+                      const parent = isParent(r.task)
+                      const resources = parent ? (rollups?.get(r.task.id!)?.resources ?? []) : (r.task.assigneeName ? [r.task.assigneeName] : [])
+                      const cost = costOf(r.task)
                       return (
                       <div
                         key={r.task.id}
@@ -233,7 +247,7 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
                       >
                         <div className="flex items-center gap-1.5 min-w-0">
                           <p className={`text-xs truncate flex-1 ${hasChildren ? 'font-bold text-slate-900 dark:text-slate-50' : 'font-semibold text-slate-800 dark:text-slate-100'}`}>{r.task.title}</p>
-                          <Badge status={r.task.status} className="text-[10px]" />
+                          <Badge status={statusOf(r.task)} className="text-[10px]" />
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px] text-slate-400 min-w-0">
                           {r.resolved.startDay != null ? (
@@ -245,7 +259,13 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
                             <span className="text-amber-500 font-semibold">No dates set</span>
                           )}
                           <span>·</span>
-                          <span className="truncate">{r.task.assigneeName || 'Unassigned'}</span>
+                          <span className="truncate">{resources.join(', ') || 'Unassigned'}</span>
+                          {cost > 0 && (
+                            <>
+                              <span>·</span>
+                              <span className="font-semibold text-slate-500">{fmtMoney(cost)}</span>
+                            </>
+                          )}
                           {(r.task.estimatedHours ?? 0) > 0 && (
                             <>
                               <span>·</span>
@@ -299,34 +319,45 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
               {/* Bars */}
               {rows.filter((r) => r.resolved.startDay != null).map((r) => {
                 const { left, width } = barBox(r.resolved)
-                const s = BAR_STYLE[r.task.status]
+                const status = statusOf(r.task)
+                const progress = STATUS_PROGRESS[status] ?? 0
+                const s = BAR_STYLE[status]
                 const accent = PRIORITY_ACCENT[r.task.priority]
                 const warn = WARNING_FLAGS[r.resolved.schedule]
                 const top = HDR_H + r.y + (ROW_H - BAR_H) / 2
                 const isCritical = showCriticalPath && criticalPath.has(r.task.id!)
                 const isMilestone = !!r.task.isMilestone
+                const parent = isParent(r.task)
+                const overdue = !!r.task.dueDate && status !== 'done' && r.task.dueDate.slice(0, 10) < todayISO()
                 const diamondSize = 14
+                const summaryBar = parent && !isMilestone
                 return (
                   <div
                     key={r.task.id}
                     role="button"
                     tabIndex={0}
-                    aria-label={`${r.task.title}, ${r.resolved.progress}%`}
+                    aria-label={`${r.task.title}, ${progress}%`}
                     title={tooltip(r.task)}
                     onClick={() => { setSelectedId(r.task.id!); onSelect(r.task) }}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(r.task.id!); onSelect(r.task) } }}
                     className={`absolute cursor-pointer transition-shadow hover:shadow-md ${isMilestone ? 'overflow-visible' : 'overflow-hidden rounded-md'} ${warn} ${isCritical ? 'ring-2 ring-red-500' : ''} ${selectedId === r.task.id ? 'ring-2 ring-brand-500' : ''}`}
-                    style={{ left: isMilestone ? left + width / 2 - diamondSize / 2 : left, top: isMilestone ? HDR_H + r.y + (ROW_H - diamondSize) / 2 : top, width: isMilestone ? diamondSize : width, height: isMilestone ? diamondSize : BAR_H }}
+                    style={{ left: isMilestone ? left + width / 2 - diamondSize / 2 : left, top: isMilestone ? HDR_H + r.y + (ROW_H - diamondSize) / 2 : summaryBar ? HDR_H + r.y + (ROW_H - SUMMARY_H) / 2 : top, width: isMilestone ? diamondSize : width, height: isMilestone ? diamondSize : summaryBar ? SUMMARY_H : BAR_H }}
                   >
                     {isMilestone ? (
                       <div className={`w-3.5 h-3.5 rotate-45 rounded-sm ${isCritical ? 'bg-red-500' : s.fill} ${selectedId === r.task.id ? 'ring-2 ring-brand-500 ring-offset-1' : ''}`} />
+                    ) : summaryBar ? (
+                      <div className="relative w-full h-full">
+                        <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[3px] bg-slate-700 dark:bg-slate-300" />
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0 h-0 border-l-[5px] border-r-[5px] border-t-[6px] border-t-slate-700 dark:border-t-slate-300 border-l-transparent border-r-transparent" />
+                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-0 h-0 border-l-[5px] border-r-[5px] border-t-[6px] border-t-slate-700 dark:border-t-slate-300 border-l-transparent border-r-transparent" />
+                      </div>
                     ) : (
                       <>
                         <div className={`h-full ${s.track}`}>
-                          <div className={`h-full ${s.fill} opacity-90`} style={{ width: `${r.resolved.progress}%` }} />
+                          <div className={`h-full ${s.fill} opacity-90`} style={{ width: `${progress}%` }} />
                         </div>
                         {accent && <div className={`absolute left-0 top-0 bottom-0 w-1 ${accent}`} />}
-                        {r.resolved.overdue && <div className="absolute right-0 top-0 bottom-0 w-1 bg-red-500" />}
+                        {overdue && <div className="absolute right-0 top-0 bottom-0 w-1 bg-red-500" />}
                         {(r.task.dependencies ?? []).length > 0 && width >= 40 && (
                           <Link2 className="absolute right-1 top-1/2 -translate-y-1/2 w-3 h-3 text-white drop-shadow" />
                         )}

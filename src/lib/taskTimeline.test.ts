@@ -5,7 +5,7 @@ import {
   findDependencyCycles, findMissingDependencies, buildDependencyEdges,
   computeCriticalPath,
   dependencyCycleMessage,
-  buildTaskHierarchy,
+  buildTaskHierarchy, rollupStatus, computeTaskRollups, orderByHierarchy,
 } from './taskTimeline'
 import type { Task } from '@/types'
 
@@ -243,5 +243,49 @@ describe('buildTaskHierarchy', () => {
     ])
     expect(Number.isInteger(depth.get('a'))).toBe(true)
     expect(Number.isInteger(depth.get('b'))).toBe(true)
+  })
+})
+
+describe('summary rollup', () => {
+  it('rollupStatus derives a parent status from its children', () => {
+    expect(rollupStatus(['done', 'done'])).toBe('done')
+    expect(rollupStatus(['todo', 'backlog'])).toBe('todo')
+    expect(rollupStatus(['review', 'review'])).toBe('review')
+    expect(rollupStatus(['done', 'todo'])).toBe('in_progress')
+    expect(rollupStatus(['done', 'in_progress'])).toBe('in_progress')
+    expect(rollupStatus([])).toBe('todo')
+  })
+
+  it('computeTaskRollups rolls up status, cost and resources', () => {
+    const tasks = [
+      makeTask({ id: 'p' }),
+      makeTask({ id: 'c1', parentId: 'p', status: 'done', cost: 100, assigneeName: 'Charlie' }),
+      makeTask({ id: 'c2', parentId: 'p', status: 'in_progress', cost: 50, assigneeName: 'Bob' }),
+      makeTask({ id: 'grand', parentId: 'c1', status: 'done', cost: 25, assigneeName: 'Alice' }),
+    ]
+    const rollups = computeTaskRollups(tasks)
+    // c1 is a parent too: its own cost/status is ignored in favour of grand.
+    expect(rollups.get('c1')).toMatchObject({ status: 'done', cost: 25, resources: ['Alice'], isParent: true })
+    expect(rollups.get('c2')).toMatchObject({ status: 'in_progress', cost: 50, resources: ['Bob'], isParent: false })
+    expect(rollups.get('p')).toMatchObject({ status: 'in_progress', cost: 75, resources: ['Alice', 'Bob'], isParent: true })
+  })
+
+  it('orderByHierarchy nests children under their parents', () => {
+    const ordered = orderByHierarchy([
+      makeTask({ id: 'c1', parentId: 'p', title: 'child1' }),
+      makeTask({ id: 'p', title: 'parent' }),
+      makeTask({ id: 'c2', parentId: 'p', title: 'child2' }),
+      makeTask({ id: 'r', title: 'root2' }),
+    ])
+    expect(ordered.map((t) => t.id)).toEqual(['p', 'c1', 'c2', 'r'])
+  })
+
+  it('buildTimelineRows nests subtasks under their parent', () => {
+    const { groups } = buildTimelineRows([
+      makeTask({ id: 'p', title: 'Parent', startDate: '2026-01-01', dueDate: '2026-01-10' }),
+      makeTask({ id: 'c', title: 'Child', parentId: 'p', startDate: '2026-01-02', dueDate: '2026-01-03' }),
+      makeTask({ id: 's', title: 'Sibling', startDate: '2026-01-03', dueDate: '2026-01-04' }),
+    ])
+    expect(groups[0].tasks.map((t) => t.task.id)).toEqual(['p', 'c', 's'])
   })
 })

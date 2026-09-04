@@ -325,6 +325,7 @@ interface RawXMLTask {
   assigneeNames: string[]
   materialNames: string[]
   notes: string
+  cost: number
   parentUid?: string
 }
 
@@ -408,6 +409,7 @@ export function parseMSProjectXML(xml: string, options: MSProjectImportOptions):
       assigneeNames: assignees,
       materialNames: taskMaterials.get(uid) ?? [],
       notes,
+      cost: Number(str(xmlChild(block, 'Cost'))) || 0,
       parentUid: lastAtLevel.get(level - 1),
     })
     lastAtLevel.set(level, uid)
@@ -447,6 +449,7 @@ export function parseMSProjectXML(xml: string, options: MSProjectImportOptions):
       isMilestone: raw.milestone,
       estimatedHours: 0,
       loggedHours: 0,
+      cost: raw.cost,
       phase: options.phase,
       dependencies: [],
       tags: [],

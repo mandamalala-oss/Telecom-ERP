@@ -6,13 +6,15 @@ import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
 import { FIELD_CONFIGS, TABLES } from '@/lib/api/entityConfigs'
-import { dependencyCycleMessage, findDependencyCycles, findMissingDependencies, resolveTaskDates, buildTaskHierarchy } from '@/lib/taskTimeline'
+import { dependencyCycleMessage, findDependencyCycles, findMissingDependencies, resolveTaskDates, buildTaskHierarchy, computeTaskRollups } from '@/lib/taskTimeline'
 import { KanbanBoard, COLUMNS, isOverdue } from './KanbanBoard'
 import { GanttView } from './GanttView'
 import { MSProjectImportModal } from './MSProjectImportModal'
 import type { Task, TaskStatus, Project, User } from '@/types'
 
 type Tab = 'kanban' | 'gantt'
+
+const fmtMoney = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M Ar` : `${n.toLocaleString()} Ar`)
 
 const SCHEDULE_FILTERS = [
   { value: 'all', label: 'All schedules' },
@@ -61,6 +63,7 @@ export function TaskBoard() {
 
   const missingDependencies = useMemo(() => findMissingDependencies(tasks), [tasks])
   const hierarchy = useMemo(() => buildTaskHierarchy(tasks), [tasks])
+  const rollups = useMemo(() => computeTaskRollups(tasks), [tasks])
 
   const filteredTasks = useMemo(() => tasks.filter((t) => {
     if (filterProject !== 'all' && t.projectId !== filterProject) return false
@@ -123,6 +126,13 @@ export function TaskBoard() {
   const parentTask = selected?.parentId ? tasks.find((t) => t.id === selected.parentId) : undefined
   const subtaskList = selected
     ? (hierarchy.children.get(selected.id!) ?? []).map((id) => tasks.find((t) => t.id === id)).filter((t): t is Task => !!t)
+    : []
+  const selectedRollup = selected ? rollups.get(selected.id!) : undefined
+  const isParentTask = selectedRollup?.isParent ?? false
+  const displayStatus = selected ? (selectedRollup?.status ?? selected.status) : undefined
+  const displayCost = selected ? (selectedRollup?.cost ?? selected.cost ?? 0) : 0
+  const displayResources = selected
+    ? isParentTask ? (selectedRollup?.resources ?? []) : (selected.assigneeName ? [selected.assigneeName] : [])
     : []
 
   return (
@@ -224,9 +234,9 @@ export function TaskBoard() {
       </div>
 
       {tab === 'kanban' ? (
-        <KanbanBoard tasks={filteredTasks} onSelect={setSelected} onMove={moveTask} openCreate={openCreate} editable={editable} />
+        <KanbanBoard tasks={filteredTasks} onSelect={setSelected} onMove={moveTask} openCreate={openCreate} editable={editable} rollups={rollups} />
       ) : (
-        <GanttView tasks={filteredTasks} onSelect={setSelected} onEdit={openEdit} editable={editable} />
+        <GanttView tasks={filteredTasks} onSelect={setSelected} onEdit={openEdit} editable={editable} rollups={rollups} />
       )}
 
       {/* Task Detail Modal — shared by both tabs */}
@@ -249,7 +259,8 @@ export function TaskBoard() {
                 { l: 'Project',   v: selected.projectName },
                 ...(parentTask ? [{ l: 'Parent', v: parentTask.title }] : []),
                 { l: 'Phase',     v: selected.phase },
-                { l: 'Assignee',  v: selected.assigneeName },
+                { l: 'Assignee',  v: displayResources.join(', ') || '—' },
+                { l: 'Cost',      v: fmtMoney(displayCost) },
                 { l: 'Start',     v: selected.startDate || '—' },
                 { l: 'Due Date',  v: selected.dueDate },
                 { l: 'Est Hours', v: `${selected.estimatedHours}h` },
@@ -261,8 +272,10 @@ export function TaskBoard() {
                 </div>
               ))}
             </div>
-            <div className="flex gap-2 flex-wrap">
-              <Badge status={selected.status} /><Badge status={selected.priority} />
+            <div className="flex gap-2 flex-wrap items-center">
+              <Badge status={displayStatus ?? 'todo'} />
+              {isParentTask && <span className="text-[10px] font-bold text-slate-500 bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded uppercase">Summary · auto</span>}
+              <Badge status={selected.priority} />
             </div>
             {selected.description && (
               <div>
@@ -286,18 +299,20 @@ export function TaskBoard() {
                 </div>
               </div>
             )}
-            <div>
-              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Move to</p>
-              <div className="flex flex-wrap gap-2">
-                {COLUMNS.filter((c) => c.id !== selected.status).map((c) => (
-                  <button key={c.id}
-                    onClick={() => { moveTask(selected.id!, c.id); setSelected(null) }}
-                    className="btn-secondary text-xs px-3 py-1.5">
-                    → {c.label}
-                  </button>
-                ))}
+            {!isParentTask && (
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Move to</p>
+                <div className="flex flex-wrap gap-2">
+                  {COLUMNS.filter((c) => c.id !== selected.status).map((c) => (
+                    <button key={c.id}
+                      onClick={() => { moveTask(selected.id!, c.id); setSelected(null) }}
+                      className="btn-secondary text-xs px-3 py-1.5">
+                      → {c.label}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
             {(selected.dependencies ?? []).length > 0 && (
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Dependencies</p>

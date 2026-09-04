@@ -251,6 +251,8 @@ export interface Task {
   dueDate: string;
   /** Optional parent task id (subtask/summary hierarchy, MS Project import). */
   parentId?: string;
+  /** Cost in Ar; leaf tasks carry their own, summary tasks roll up subtasks. */
+  cost?: number;
   isMilestone?: boolean;
   estimatedHours: number;
   loggedHours: number;
