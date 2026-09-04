@@ -114,3 +114,33 @@ describe('FIELD_CONFIGS ↔ database/schema.sql', () => {
     }
   })
 })
+
+describe('project ↔ site wiring', () => {
+  it('tasks expose a project-scoped site selector that clears on project change', () => {
+    const siteField = FIELD_CONFIGS[TABLES.tasks].find((f) => f.key === 'siteId')!
+    expect(siteField).toBeDefined()
+    expect(siteField.clearOnChangeOf).toBe('projectName')
+
+    const options = {
+      project_sites: [
+        { projectId: 'p1', siteId: 's1' },
+        { projectId: 'p1', siteId: 's2' },
+        { projectId: 'p2', siteId: 's3' },
+      ],
+    }
+    const filter = siteField.lookup!.filter!
+    expect(filter({ id: 's1' }, { projectId: 'p1' }, options)).toBe(true)
+    expect(filter({ id: 's2' }, { projectId: 'p1' }, options)).toBe(true)
+    expect(filter({ id: 's3' }, { projectId: 'p1' }, options)).toBe(false)
+    // No project selected → no sites; no junction available → no sites.
+    expect(filter({ id: 's1' }, {}, options)).toBe(false)
+    expect(filter({ id: 's1' }, { projectId: 'p1' })).toBe(false)
+  })
+
+  it('projects attach many sites via a multi-select', () => {
+    const siteIdsField = FIELD_CONFIGS[TABLES.projects].find((f) => f.key === 'siteIds')!
+    expect(siteIdsField).toBeDefined()
+    expect(siteIdsField.type).toBe('multiSelect')
+    expect(siteIdsField.virtual).toBe(true)
+  })
+})

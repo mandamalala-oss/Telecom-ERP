@@ -325,14 +325,17 @@ export function ProjectsModule() {
   const { data: projectSites, refresh: refreshProjectSites } = useEntity<ProjectSite>(TABLES.projectSites)
 
   // Keep the junction table in sync when the form's site selection changes.
-  // 1 project = 1 site: `values` carries the virtual `siteId` single-select
+  // 1 project = many sites: `values` carries the virtual `siteId` multi-select
   // (stripped from the projects row itself); we rewrite the project_sites rows
   // here, on both create and edit.
   const syncSites = async (row: Project, values: Record<string, any>) => {
-    const siteId: string = typeof values.siteId === 'string' ? values.siteId : ''
+    const raw = values.siteIds
+    const siteIds: string[] = Array.isArray(raw)
+      ? raw.filter((s: unknown) => typeof s === 'string' && s)
+      : (typeof raw === 'string' && raw ? [raw] : [])
     const { error: del } = await supabase.from('project_sites').delete().eq('project_id', row.id)
     if (del) throw del
-    if (siteId) {
+    for (const siteId of siteIds) {
       const { error: ins } = await supabase.from('project_sites').insert({ project_id: row.id, site_id: siteId })
       if (ins) throw ins
     }
@@ -679,7 +682,7 @@ export function ProjectsModule() {
                   <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDelete(selected.id!)}>Delete</Button>
                   <Button icon={<Pencil className="w-4 h-4" />} onClick={() => {
                     if (isSupply(selected)) { setSupplyModal({ mode: 'edit', project: selected }); setSelected(null) }
-                    else { openEdit({ ...selected, siteId: selSites[0]?.id ?? '' }); setSelected(null) }
+                    else { openEdit({ ...selected, siteIds: selSites.map(s => s.id) } as Project); setSelected(null) }
                   }}>Edit</Button>
                 </>
               )}

@@ -207,7 +207,7 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   ],
   projects: [
     { key: 'name', label: 'Name', type: 'text', required: true },
-    { key: 'siteId', label: 'Site', type: 'select', virtual: true, lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId' } },
+    { key: 'siteIds', label: 'Sites', type: 'multiSelect', virtual: true, lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId' } },
     { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { customerId: 'id' } } },
     { key: 'status', label: 'Status', type: 'select', options: ['not_started', 'in_progress', 'on_hold', 'completed', 'cancelled'] },
     { key: 'currentPhase', label: 'Current Phase', type: 'select', options: ['survey', 'installation', 'integration', 'atp', 'acceptance'] },
@@ -251,6 +251,14 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   tasks: [
     { key: 'title', label: 'Title', type: 'text', required: true },
     { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
+    { key: 'siteId', label: 'Site', type: 'select', clearOnChangeOf: 'projectName',
+      lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId',
+        filter: (site, values, options) => {
+          const junction = (options?.['project_sites'] ?? []) as any[]
+          const projectId = values?.projectId
+          if (!projectId) return false
+          return junction.some((ps) => ps.projectId === projectId && ps.siteId === site.id)
+        } } },
     { key: 'description', label: 'Description', type: 'textarea' },
     { key: 'status', label: 'Status', type: 'select', options: ['backlog', 'todo', 'in_progress', 'review', 'done'] },
     { key: 'priority', label: 'Priority', type: 'select', options: ['low', 'medium', 'high', 'critical'] },

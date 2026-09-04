@@ -10,7 +10,7 @@ import { dependencyCycleMessage, findDependencyCycles, findMissingDependencies, 
 import { KanbanBoard, COLUMNS, isOverdue } from './KanbanBoard'
 import { GanttView } from './GanttView'
 import { MSProjectImportModal } from './MSProjectImportModal'
-import type { Task, TaskStatus, Project, User } from '@/types'
+import type { Task, TaskStatus, Project, User, Site, ProjectSite } from '@/types'
 
 type Tab = 'kanban' | 'gantt'
 
@@ -29,6 +29,11 @@ const SCHEDULE_FILTERS = [
  * task detail/edit/delete modal — switching tabs never refetches.
  */
 export function TaskBoard() {
+  const { data: projects } = useEntity<Project>(TABLES.projects)
+  const { data: users } = useEntity<User>(TABLES.users)
+  const { data: sites } = useEntity<Site>(TABLES.sites)
+  const { data: projectSites } = useEntity<ProjectSite>(TABLES.projectSites)
+
   const taskRowsRef = useRef<Task[]>([])
   const taskValidation = (values: Record<string, any>, editing: Task | null) => {
     const candidate = { ...(editing ?? {}), ...values, id: editing?.id ?? '__new-task__' } as Task
@@ -41,15 +46,30 @@ export function TaskBoard() {
     undefined,
     undefined,
     undefined,
-    undefined,
+    { project_sites: projectSites },
     taskValidation
   )
   taskRowsRef.current = tasks
-  const { data: projects } = useEntity<Project>(TABLES.projects)
-  const { data: users } = useEntity<User>(TABLES.users)
+
+  // Sites linked to each project (project_sites junction) — used to scope the
+  // site filter and the task form's site dropdown.
+  const sitesByProject = useMemo(() => {
+    const siteById = new Map(sites.map((s) => [s.id, s]))
+    const map = new Map<string, Site[]>()
+    for (const ps of projectSites) {
+      const site = siteById.get(ps.siteId)
+      if (!site) continue
+      const list = map.get(ps.projectId) ?? []
+      list.push(site)
+      map.set(ps.projectId, list)
+    }
+    for (const list of map.values()) list.sort((a, b) => a.siteId.localeCompare(b.siteId))
+    return map
+  }, [projectSites, sites])
 
   const [tab, setTab] = useState<Tab>('kanban')
   const [filterProject, setFilterProject] = useState('all')
+  const [filterSite, setFilterSite] = useState('all')
   const [filterAssignee, setFilterAssignee] = useState('all')
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterPhase, setFilterPhase] = useState('all')
@@ -65,8 +85,15 @@ export function TaskBoard() {
   const hierarchy = useMemo(() => buildTaskHierarchy(tasks), [tasks])
   const rollups = useMemo(() => computeTaskRollups(tasks), [tasks])
 
+  // Site filter options: scoped to the selected project, or all sites.
+  const filterSiteOptions = useMemo(() => {
+    const list = filterProject === 'all' ? sites : (sitesByProject.get(filterProject) ?? [])
+    return [...list].sort((a, b) => a.siteId.localeCompare(b.siteId))
+  }, [filterProject, sites, sitesByProject])
+
   const filteredTasks = useMemo(() => tasks.filter((t) => {
     if (filterProject !== 'all' && t.projectId !== filterProject) return false
+    if (filterSite !== 'all' && t.siteId !== filterSite) return false
     if (filterAssignee !== 'all' && t.assigneeId !== filterAssignee) return false
     if (filterStatus !== 'all' && t.status !== filterStatus) return false
     if (filterPhase !== 'all' && t.phase !== filterPhase) return false
@@ -79,7 +106,7 @@ export function TaskBoard() {
       if (filterSchedule === 'overdue' && !r.overdue) return false
     }
     return true
-  }), [tasks, filterProject, filterAssignee, filterStatus, filterPhase, filterSchedule, search, tab])
+  }), [tasks, filterProject, filterSite, filterAssignee, filterStatus, filterPhase, filterSchedule, search, tab])
 
   const moveTask = async (taskId: string, newStatus: TaskStatus) => {
     try {
@@ -213,9 +240,13 @@ export function TaskBoard() {
           aria-label="Search tasks"
           className="input w-52 text-sm"
         />
-        <select value={filterProject} onChange={(e) => setFilterProject(e.target.value)} className="select w-56 text-sm">
+        <select value={filterProject} onChange={(e) => { setFilterProject(e.target.value); setFilterSite('all') }} className="select w-56 text-sm">
           <option value="all">All Projects</option>
           {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select value={filterSite} onChange={(e) => setFilterSite(e.target.value)} className="select w-56 text-sm">
+          <option value="all">All Sites</option>
+          {filterSiteOptions.map((s) => <option key={s.id} value={s.id}>{s.siteId} — {s.name}</option>)}
         </select>
         <select value={filterAssignee} onChange={(e) => setFilterAssignee(e.target.value)} className="select w-48 text-sm">
           <option value="all">All Assignees</option>
@@ -341,6 +372,8 @@ export function TaskBoard() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         projects={projects}
+        sites={sites}
+        projectSites={projectSites}
         users={users}
         defaultProjectId={filterProject === 'all' ? '' : filterProject}
         onConfirm={importTasks}

@@ -113,6 +113,16 @@ The import format switched from **MS Project CSV to the real MS Project XML file
 - Tests: +5 (rollupStatus, computeTaskRollups, orderByHierarchy, buildTimelineRows nesting, cost parse) → **286/286**, `tsc` clean, build green.
 - **Run `database/migrations/034_task_cost.sql` on the live DB** (idempotent).
 
+### Milestone 23 — Project ↔ site scoping on tasks + site filter (2026-09-04)
+
+"1 project → many sites" is now wired through the Task Board end-to-end (the `project_sites` junction and `tasks.site_id` already existed — this milestone surfaces them):
+- **Project form** (`entityConfigs.projects`): the Site field is now a **multi-select** (`siteIds`, virtual) and `ProjectsModule.syncSites` rewrites all `project_sites` rows on create/edit (delete-all + re-insert) instead of one site. `openEdit` seeds the selected site ids.
+- **New Task form**: added a **Site** selector scoped to the selected project — a `sites` lookup with a `filter` that cross-references `project_sites` (the generic `LookupConfig.filter` now receives the full `options` map as a third arg), plus `FieldConfig.clearOnChangeOf` so the Site clears when the Project changes. TaskBoard passes `{ project_sites }` as the form's `extraLookup`.
+- **MS Project import modal**: now asks for **Project + Site** (site dropdown scoped to the project's linked sites); every imported task gets that `siteId` (`MSProjectImportOptions.siteId`).
+- **Task Board filters**: new **Site** dropdown (scoped to the selected project, else all sites) filters tasks by `siteId`; switching project resets the site filter. Filtering is per-site — no forced "all projects/all sites".
+- CRUD already exists and is unchanged: sites are deleted in the Sites module; tasks ("old gantt entries") are deleted from the Task detail modal.
+- Tests: +2 (tasks site-scoped filter + `clearOnChangeOf`, projects `siteIds` multi-select) → **288/288**, `tsc` clean, build green. No new migration (uses existing `project_sites` / `tasks.site_id`).
+
 ### Milestone 13 — Email confirmation + CEO-grant permissions (pushed `d775f06`)
 
 **Email confirmation flow** (works on localhost AND Vercel):

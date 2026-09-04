@@ -26,8 +26,10 @@ export interface LookupConfig {
   /** formField → rowField: fields auto-filled when an option is chosen. */
   populate?: Record<string, string>
   /** Client-side predicate applied to the fetched rows — e.g. show only
-   * `team_leader` employees in the "Team Leader" dropdown. */
-  filter?: (row: any, values?: Record<string, any>) => boolean
+   * `team_leader` employees in the "Team Leader" dropdown. `values` is the
+   * current form state; `options` is the full lookup row map (all tables) so
+   * a filter can cross-reference a junction (e.g. sites linked to a project). */
+  filter?: (row: any, values?: Record<string, any>, options?: Record<string, any[]>) => boolean
 }
 
 export interface FieldConfig {
@@ -77,6 +79,9 @@ export interface FieldConfig {
    * non-empty string blocks the save and surfaces the message — e.g. a task
    * whose start date is after its due date. */
   validate?: (values: Record<string, any>) => string | null
+  /** Reset this field to empty whenever another field (key) changes — e.g. a
+   * site selector cleared when the project changes. */
+  clearOnChangeOf?: string
 }
 
 /** One column of a configurable `lineItems` editor row. */
@@ -199,6 +204,11 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   const set = (k: string, v: any) =>
     setValues((prev) => {
       const next = { ...prev, [k]: v }
+      // Dependent selectors reset when their dependency changes (e.g. a site
+      // cleared when a new project is picked).
+      for (const f of fields) {
+        if (f.clearOnChangeOf === k) next[f.key] = ''
+      }
       // Milestones have zero duration: editing either date keeps the pair
       // synchronized, while enabling the checkbox copies an existing start.
       if (next.isMilestone && (k === 'isMilestone' || k === 'startDate' || k === 'dueDate')) {
@@ -332,7 +342,7 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
     // Keep the editing record id and hidden lookup-populated FKs available to
     // dynamic filters without adding either value to the saved payload.
     const filterValues = { ...values, id: values.id ?? initial?.id, projectId: values.projectId ?? initial?.projectId }
-    return f.lookup!.filter ? rows.filter((row) => f.lookup!.filter!(row, filterValues)) : rows
+    return f.lookup!.filter ? rows.filter((row) => f.lookup!.filter!(row, filterValues, allOptions)) : rows
   }
 
   const handleLookupChange = (f: FieldConfig, value: string) => {

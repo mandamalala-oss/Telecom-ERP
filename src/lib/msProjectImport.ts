@@ -8,6 +8,8 @@ export interface MSProjectImportOptions {
   phase: ProjectPhase
   dateLocale: MSProjectDateLocale
   users: Pick<User, 'id' | 'name'>[]
+  /** Optional site to scope every imported task to (chosen in the modal). */
+  siteId?: string
 }
 
 export interface UnresolvedDependency {
@@ -446,6 +448,7 @@ export function parseMSProjectXML(xml: string, options: MSProjectImportOptions):
       startDate: raw.startDate ?? '',
       dueDate: raw.dueDate ?? '',
       parentId: parentId ? parentId : undefined,
+      siteId: options.siteId ? options.siteId : undefined,
       isMilestone: raw.milestone,
       estimatedHours: 0,
       loggedHours: 0,

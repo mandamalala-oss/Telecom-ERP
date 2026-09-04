@@ -4,12 +4,14 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { parseMSProjectXML, type MSProjectImportResult, type TaskAssignmentInfo } from '@/lib/msProjectImport'
 import { buildTaskHierarchy } from '@/lib/taskTimeline'
-import type { Project, ProjectPhase, Task, User } from '@/types'
+import type { Project, ProjectPhase, Task, User, Site, ProjectSite } from '@/types'
 
 interface Props {
   open: boolean
   onClose: () => void
   projects: Project[]
+  sites: Site[]
+  projectSites: ProjectSite[]
   users: User[]
   defaultProjectId?: string
   onConfirm: (tasks: Task[], unresolvedCount: number) => Promise<void>
@@ -27,8 +29,9 @@ function renderAssignee(task: Task, info?: TaskAssignmentInfo) {
 }
 
 /** Preview-first importer for the standard MS Project XML file format. */
-export function MSProjectImportModal({ open, onClose, projects, users, defaultProjectId = '', onConfirm }: Props) {
+export function MSProjectImportModal({ open, onClose, projects, sites, projectSites, users, defaultProjectId = '', onConfirm }: Props) {
   const [projectId, setProjectId] = useState(defaultProjectId)
+  const [siteId, setSiteId] = useState('')
   const [phase, setPhase] = useState<ProjectPhase>('survey')
   const [result, setResult] = useState<MSProjectImportResult | null>(null)
   const [fileName, setFileName] = useState('')
@@ -39,6 +42,7 @@ export function MSProjectImportModal({ open, onClose, projects, users, defaultPr
   useEffect(() => {
     if (!open) return
     setProjectId(defaultProjectId)
+    setSiteId('')
     setPhase('survey')
     setResult(null)
     setFileName('')
@@ -46,6 +50,14 @@ export function MSProjectImportModal({ open, onClose, projects, users, defaultPr
   }, [open, defaultProjectId])
 
   const project = projects.find((item) => item.id === projectId)
+
+  // Sites linked to the selected project (project_sites junction).
+  const sitesForProject = useMemo(() => {
+    const siteById = new Map(sites.map((s) => [s.id, s]))
+    const siteIds = new Set(projectSites.filter((ps) => ps.projectId === projectId).map((ps) => ps.siteId))
+    return [...siteIds].map((id) => siteById.get(id)).filter((s): s is Site => !!s).sort((a, b) => a.siteId.localeCompare(b.siteId))
+  }, [sites, projectSites, projectId])
+
   const hierarchy = useMemo(() => (result ? buildTaskHierarchy(result.tasks) : null), [result])
   const assignmentById = useMemo(() => new Map((result?.assignments ?? []).map((a) => [a.taskId, a])), [result])
 
@@ -60,6 +72,7 @@ export function MSProjectImportModal({ open, onClose, projects, users, defaultPr
         phase,
         dateLocale: 'dmy',
         users,
+        siteId,
       })
       setResult(parsed)
     } catch (e: any) {
@@ -113,12 +126,19 @@ export function MSProjectImportModal({ open, onClose, projects, users, defaultPr
           </ol>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
             Project
-            <select value={projectId} onChange={(e) => { setProjectId(e.target.value); setResult(null) }} className="select normal-case font-normal text-sm">
+            <select value={projectId} onChange={(e) => { setProjectId(e.target.value); setSiteId(''); setResult(null) }} className="select normal-case font-normal text-sm">
               <option value="">Select project…</option>
               {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+            Site
+            <select value={siteId} onChange={(e) => { setSiteId(e.target.value); setResult(null) }} className="select normal-case font-normal text-sm" disabled={!projectId}>
+              <option value="">Select site…</option>
+              {sitesForProject.map((item) => <option key={item.id} value={item.id}>{item.siteId} — {item.name}</option>)}
             </select>
           </label>
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
