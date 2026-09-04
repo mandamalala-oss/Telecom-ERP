@@ -125,6 +125,8 @@ The import format switched from **MS Project CSV to the real MS Project XML file
 
 **Follow-up (same day): delete a whole project from the Gantt.** Each project group header in the Gantt now has a trash action (editable + project-edit permission) that deletes the project in one step — `tasks.project_id` cascades, so every task under it goes too. `TaskBoard.deleteProject` confirms (with the task count), calls `makeApi('projects').remove`, then refreshes tasks + projects.
 
+**Follow-up (same day): Project → Site → Task outline in the Gantt.** The Gantt left panel now shows a three-level hierarchy: **project** header → **site** sub-header (`siteId — name`, sorted) → **task/subtask** rows (still indented). `GanttView` buckets each project's tasks by `tasks.site_id` (resolved through the passed `sites` list); tasks without a linked site render flat, or under a "No site" sub-header when a project mixes linked and unlinked tasks. Site sub-headers get a lighter background band and no collapse toggle (project groups still collapse).
+
 ### Milestone 13 — Email confirmation + CEO-grant permissions (pushed `d775f06`)
 
 **Email confirmation flow** (works on localhost AND Vercel):

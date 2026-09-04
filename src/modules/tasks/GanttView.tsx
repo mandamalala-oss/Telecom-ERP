@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
 import { ChevronRight, Link2, Maximize2, Calendar, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -8,10 +8,11 @@ import {
   STATUS_PROGRESS,
   type TimelineTask, type ResolvedTaskDates, type TaskScheduleStatus, type TaskRollup,
 } from '@/lib/taskTimeline'
-import type { Task, TaskStatus } from '@/types'
+import type { Task, TaskStatus, Site } from '@/types'
 
 const ROW_H = 40
 const GROUP_H = 32
+const SITE_H = 24
 const BAR_H = 22
 const SUMMARY_H = 10
 const HDR_H = 44
@@ -67,14 +68,17 @@ interface GanttViewProps {
   rollups?: Map<string, TaskRollup>
   /** Delete a whole project (and its tasks) — shown on each project group. */
   onDeleteProject?: (projectId: string) => void
+  /** Site rows, to label each site sub-group (ID — name). */
+  sites: Site[]
 }
 
 /** Rows and their y offsets inside the timeline, computed in one pass so the
  *  sticky task panel, the bars, and the dependency connectors all align. */
-interface LayoutRow { task: Task; resolved: ReturnType<typeof resolveTaskDates>; groupKey: string; y: number }
-interface LayoutGroup { key: string; name: string; y: number; rowCount: number; collapsed: boolean; projectId?: string }
+interface LayoutRow { task: Task; resolved: ReturnType<typeof resolveTaskDates>; groupKey: string; siteKey: string; y: number }
+interface LayoutSite { key: string; name: string; y: number; rowCount: number }
+interface LayoutGroup { key: string; name: string; y: number; rowCount: number; collapsed: boolean; projectId?: string; sites: LayoutSite[] }
 
-export function GanttView({ tasks, onSelect, onEdit, editable, rollups, onDeleteProject }: GanttViewProps) {
+export function GanttView({ tasks, onSelect, onEdit, editable, rollups, onDeleteProject, sites }: GanttViewProps) {
   const [zoom, setZoom] = useState<(typeof ZOOMS)[number]['key']>('week')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -93,29 +97,71 @@ export function GanttView({ tasks, onSelect, onEdit, editable, rollups, onDelete
   const statusOf = (task: Task): TaskStatus => rollups?.get(task.id!)?.status ?? task.status
   const costOf = (task: Task): number => rollups?.get(task.id!)?.cost ?? (task.cost ?? 0)
   const isParent = (task: Task): boolean => rollups?.get(task.id!)?.isParent ?? (hierarchy.children.get(task.id!) ?? []).length > 0
+  const siteById = useMemo(() => new Map(sites.map((s) => [s.id, s])), [sites])
 
-  // Flat layout (group headers + rows) shared by the left panel, the bars and
-  // the connectors. The unscheduled list renders as a final "Unscheduled
-  // Tasks" group so it can be collapsed too.
+  // Flat layout (project header → site header → task rows) shared by the left
+  // panel, the bars and the connectors. The unscheduled list renders as a
+  // final "Unscheduled Tasks" group (no site sub-headers) so it can collapse.
   const { groups, rows, contentY } = useMemo(() => {
     const groups: LayoutGroup[] = []
     const rows: LayoutRow[] = []
     let y = 0
-    const pushGroup = (key: string, name: string, list: TimelineTask[], projectId?: string) => {
+
+    const emitProject = (key: string, name: string, projectId: string | undefined, list: TimelineTask[], withSites: boolean) => {
       const isCollapsed = collapsed.has(key)
-      groups.push({ key, name, y, rowCount: list.length, collapsed: isCollapsed, projectId })
+      const groupY = y
       y += GROUP_H
-      if (isCollapsed) return
-      for (const rt of list) {
-        rows.push({ task: rt.task, resolved: rt.resolved, groupKey: key, y })
-        y += ROW_H
+      const sites: LayoutSite[] = []
+      if (!isCollapsed) {
+        if (withSites) {
+          // Bucket tasks by site (preserving task order); unknown-site tasks
+          // collect under a final "No site" header.
+          const buckets = new Map<string, { name: string; list: TimelineTask[] }>()
+          const noSite: TimelineTask[] = []
+          for (const rt of list) {
+            const site = rt.task.siteId ? siteById.get(rt.task.siteId) : undefined
+            if (site) {
+              let b = buckets.get(site.id)
+              if (!b) { b = { name: `${site.siteId} — ${site.name}`, list: [] }; buckets.set(site.id, b) }
+              b.list.push(rt)
+            } else {
+              noSite.push(rt)
+            }
+          }
+          const ordered = [...buckets.values()].sort((a, b) => a.name.localeCompare(b.name))
+          const emitSite = (siteKey: string, siteName: string, siteList: TimelineTask[]) => {
+            sites.push({ key: siteKey, name: siteName, y, rowCount: siteList.length })
+            y += SITE_H
+            for (const rt of siteList) {
+              rows.push({ task: rt.task, resolved: rt.resolved, groupKey: key, siteKey, y })
+              y += ROW_H
+            }
+          }
+          if (ordered.length === 0) {
+            // No task has a linked site → render flat (no site sub-headers).
+            for (const rt of list) {
+              rows.push({ task: rt.task, resolved: rt.resolved, groupKey: key, siteKey: '', y })
+              y += ROW_H
+            }
+          } else {
+            for (const b of ordered) emitSite(`${key}::${b.name}`, b.name, b.list)
+            if (noSite.length > 0) emitSite(`${key}::__nosite__`, 'No site', noSite)
+          }
+        } else {
+          for (const rt of list) {
+            rows.push({ task: rt.task, resolved: rt.resolved, groupKey: key, siteKey: '', y })
+            y += ROW_H
+          }
+        }
       }
+      groups.push({ key, name, y: groupY, rowCount: list.length, collapsed: isCollapsed, projectId, sites })
     }
-    for (const g of projectGroups) pushGroup(g.projectId || g.projectName || 'Other', g.projectName, g.tasks, g.projectId || undefined)
-    if (unscheduled.length > 0) pushGroup('unscheduled', 'Unscheduled Tasks', unscheduled)
+
+    for (const g of projectGroups) emitProject(g.projectId || g.projectName || 'Other', g.projectName, g.projectId || undefined, g.tasks, true)
+    if (unscheduled.length > 0) emitProject('unscheduled', 'Unscheduled Tasks', undefined, unscheduled, false)
     return { groups, rows, contentY: y }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectGroups, unscheduled, collapsed])
+  }, [projectGroups, unscheduled, collapsed, siteById])
 
   const rowY = useMemo(() => new Map(rows.map((r) => [r.task.id!, r.y])), [rows])
   const totalWidth = range.totalDays * dayWidth
@@ -169,6 +215,57 @@ export function GanttView({ tasks, onSelect, onEdit, editable, rollups, onDelete
   const scrollToToday = () => {
     const left = barPosition(todayDay, range.startDay, dayWidth) - 120
     scrollRef.current?.scrollTo({ left: Math.max(0, left), behavior: 'smooth' })
+  }
+
+  const renderRow = (r: LayoutRow) => {
+    const depth = hierarchy.depth.get(r.task.id!) ?? 0
+    const hasChildren = (hierarchy.children.get(r.task.id!) ?? []).length > 0
+    const parent = isParent(r.task)
+    const resources = parent ? (rollups?.get(r.task.id!)?.resources ?? []) : (r.task.assigneeName ? [r.task.assigneeName] : [])
+    const cost = costOf(r.task)
+    return (
+      <div
+        key={r.task.id}
+        role="button"
+        tabIndex={0}
+        aria-label={`Task ${r.task.title}`}
+        onClick={() => { setSelectedId(r.task.id!); onSelect(r.task) }}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(r.task.id!); onSelect(r.task) } }}
+        style={{ height: ROW_H, paddingLeft: 12 + depth * 16 }}
+        className={`flex flex-col justify-center gap-0.5 pr-3 border-b border-slate-100 dark:border-slate-800 cursor-pointer transition-colors ${
+          selectedId === r.task.id ? 'bg-brand-50 dark:bg-brand-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 min-w-0">
+          <p className={`text-xs truncate flex-1 ${hasChildren ? 'font-bold text-slate-900 dark:text-slate-50' : 'font-semibold text-slate-800 dark:text-slate-100'}`}>{r.task.title}</p>
+          <Badge status={statusOf(r.task)} className="text-[10px]" />
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 min-w-0">
+          {r.resolved.startDay != null ? (
+            <span className="truncate">
+              {fmtDay(formatDay(r.resolved.startDay))}
+              {r.resolved.endDay !== r.resolved.startDay && ` → ${fmtDay(formatDay(r.resolved.endDay!))}`}
+            </span>
+          ) : (
+            <span className="text-amber-500 font-semibold">No dates set</span>
+          )}
+          <span>·</span>
+          <span className="truncate">{resources.join(', ') || 'Unassigned'}</span>
+          {cost > 0 && (
+            <>
+              <span>·</span>
+              <span className="font-semibold text-slate-500">{fmtMoney(cost)}</span>
+            </>
+          )}
+          {(r.task.estimatedHours ?? 0) > 0 && (
+            <>
+              <span>·</span>
+              <span>{r.task.loggedHours}h/{r.task.estimatedHours}h</span>
+            </>
+          )}
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -237,58 +334,23 @@ export function GanttView({ tasks, onSelect, onEdit, editable, rollups, onDelete
                       </button>
                     )}
                   </div>
-                  {!g.collapsed && rows
-                    .filter((r) => r.groupKey === g.key)
-                    .map((r) => {
-                      const depth = hierarchy.depth.get(r.task.id!) ?? 0
-                      const hasChildren = (hierarchy.children.get(r.task.id!) ?? []).length > 0
-                      const parent = isParent(r.task)
-                      const resources = parent ? (rollups?.get(r.task.id!)?.resources ?? []) : (r.task.assigneeName ? [r.task.assigneeName] : [])
-                      const cost = costOf(r.task)
-                      return (
-                      <div
-                        key={r.task.id}
-                        role="button"
-                        tabIndex={0}
-                        aria-label={`Task ${r.task.title}`}
-                        onClick={() => { setSelectedId(r.task.id!); onSelect(r.task) }}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(r.task.id!); onSelect(r.task) } }}
-                        style={{ height: ROW_H, paddingLeft: 12 + depth * 16 }}
-                        className={`flex flex-col justify-center gap-0.5 pr-3 border-b border-slate-100 dark:border-slate-800 cursor-pointer transition-colors ${
-                          selectedId === r.task.id ? 'bg-brand-50 dark:bg-brand-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                        }`}
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <p className={`text-xs truncate flex-1 ${hasChildren ? 'font-bold text-slate-900 dark:text-slate-50' : 'font-semibold text-slate-800 dark:text-slate-100'}`}>{r.task.title}</p>
-                          <Badge status={statusOf(r.task)} className="text-[10px]" />
-                        </div>
-                        <div className="flex items-center gap-1.5 text-[10px] text-slate-400 min-w-0">
-                          {r.resolved.startDay != null ? (
-                            <span className="truncate">
-                              {fmtDay(formatDay(r.resolved.startDay))}
-                              {r.resolved.endDay !== r.resolved.startDay && ` → ${fmtDay(formatDay(r.resolved.endDay!))}`}
-                            </span>
-                          ) : (
-                            <span className="text-amber-500 font-semibold">No dates set</span>
-                          )}
-                          <span>·</span>
-                          <span className="truncate">{resources.join(', ') || 'Unassigned'}</span>
-                          {cost > 0 && (
-                            <>
-                              <span>·</span>
-                              <span className="font-semibold text-slate-500">{fmtMoney(cost)}</span>
-                            </>
-                          )}
-                          {(r.task.estimatedHours ?? 0) > 0 && (
-                            <>
-                              <span>·</span>
-                              <span>{r.task.loggedHours}h/{r.task.estimatedHours}h</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      )
-                    })}
+                  {!g.collapsed && (
+                    <>
+                      {g.sites.map((site) => (
+                        <Fragment key={site.key}>
+                          <div
+                            style={{ height: SITE_H }}
+                            className="flex items-center gap-1.5 px-3 bg-slate-50 dark:bg-slate-800/30 text-[10px] font-semibold text-slate-500 dark:text-slate-400 border-b border-slate-100 dark:border-slate-800"
+                          >
+                            <span className="truncate flex-1" style={{ paddingLeft: 8 }}>{site.name}</span>
+                            <span className="text-[9px] font-semibold text-slate-400">{site.rowCount}</span>
+                          </div>
+                          {rows.filter((r) => r.siteKey === site.key).map(renderRow)}
+                        </Fragment>
+                      ))}
+                      {g.sites.length === 0 && rows.filter((r) => r.groupKey === g.key).map(renderRow)}
+                    </>
+                  )}
                 </div>
               ))}
               {groups.length === 0 && (
@@ -327,6 +389,10 @@ export function GanttView({ tasks, onSelect, onEdit, editable, rollups, onDelete
               {/* Group bands */}
               {groups.map((g) => (
                 <div key={g.key} className="absolute left-0 right-0 bg-slate-50/80 dark:bg-slate-800/30 pointer-events-none" style={{ top: HDR_H + g.y, height: GROUP_H }} />
+              ))}
+              {/* Site bands (lighter, under each project group) */}
+              {groups.flatMap((g) => g.sites).map((site) => (
+                <div key={site.key} className="absolute left-0 right-0 bg-slate-50/40 dark:bg-slate-800/20 pointer-events-none" style={{ top: HDR_H + site.y, height: SITE_H }} />
               ))}
 
               {/* Bars */}

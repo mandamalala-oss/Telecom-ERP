@@ -290,7 +290,7 @@ export function TaskBoard() {
       {tab === 'kanban' ? (
         <KanbanBoard tasks={filteredTasks} onSelect={setSelected} onMove={moveTask} openCreate={openCreate} editable={editable} rollups={rollups} />
       ) : (
-        <GanttView tasks={filteredTasks} onSelect={setSelected} onEdit={openEdit} editable={editable} rollups={rollups} onDeleteProject={deleteProject} />
+        <GanttView tasks={filteredTasks} onSelect={setSelected} onEdit={openEdit} editable={editable} rollups={rollups} onDeleteProject={deleteProject} sites={sites} />
       )}
 
       {/* Task Detail Modal — shared by both tabs */}
