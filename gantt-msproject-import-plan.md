@@ -1,5 +1,10 @@
 # Plan: MS Project–style Gantt + Import for TelecomERP Task Board
 
+> Note (2026-09-04): the CSV importer spec in §5 below was superseded by the
+> **MS Project XML** importer (Milestone 22) — `parseMSProjectXML` in
+> `src/lib/msProjectImport.ts`, which also adds `tasks.parent_id` (migration
+> 033) so summary tasks keep their subtasks. §5's CSV text is kept for history.
+
 ## Context (paste these files for the AI before starting)
 - `src/components/.../GanttView.tsx` — existing Gantt renderer (React/TS, Tailwind)
 - `src/lib/taskTimeline.ts` — date/dependency/grouping helpers

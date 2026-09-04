@@ -249,6 +249,8 @@ export interface Task {
   /** Gantt bar start; optional — legacy tasks may only have a due date. */
   startDate?: string;
   dueDate: string;
+  /** Optional parent task id (subtask/summary hierarchy, MS Project import). */
+  parentId?: string;
   isMilestone?: boolean;
   estimatedHours: number;
   loggedHours: number;

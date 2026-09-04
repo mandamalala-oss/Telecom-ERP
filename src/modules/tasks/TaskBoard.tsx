@@ -110,6 +110,7 @@ export function TaskBoard() {
       if (!payload.startDate) delete payload.startDate
       if (!payload.dueDate) delete payload.dueDate
       if (!payload.assigneeId) delete payload.assigneeId
+      if (!payload.parentId) delete payload.parentId
       await create(payload)
       importedCount++
     }

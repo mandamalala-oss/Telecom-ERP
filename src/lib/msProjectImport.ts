@@ -243,3 +243,212 @@ export function parseMSProjectCSV(csv: string, options: MSProjectImportOptions):
 
   return { tasks, unresolvedDependencies, unresolvedAssignees, errors }
 }
+
+// ─── MS Project XML ─────────────────────────────────────────────────────────
+// Microsoft Project's own file format (the *.xml saved from Project Desktop,
+// root element <Project xmlns="http://schemas.microsoft.com/project">). The
+// schema uses fixed English element names (Name, Start, Finish, Summary,
+// OutlineLevel, PredecessorUID, ...) and the file itself is never localized,
+// so the same parser handles both French and English project files.
+//
+// Language is NOT the variance to worry about here — it's date "formats".
+// MS Project writes ISO-8601 datetimes (2026-06-01T07:00:00), but exports from
+// other tools or hand-edits can arrive as bare dates in any layout, so dates
+// are pushed through the same tolerant parseDate() used by the CSV importer.
+
+function decodeXmlEntities(text: string): string {
+  return str(text)
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex: string) => String.fromCodePoint(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec: string) => String.fromCodePoint(Number(dec)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+}
+
+/** Inner contents of every <tag>…</tag> block. Blocks never nest the same tag. */
+function xmlBlocks(xml: string, tag: string): string[] {
+  const blocks: string[] = []
+  const re = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'g')
+  let match: RegExpExecArray | null
+  while ((match = re.exec(xml)) !== null) blocks.push(match[1])
+  return blocks
+}
+
+/** First <tag>…</tag> child value, trimmed. */
+function xmlChild(block: string, tag: string): string {
+  const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(block)
+  return match ? str(match[1]) : ''
+}
+
+/** Every <tag>…</tag> value within a block (e.g. several <PredecessorUID>). */
+function xmlChildren(block: string, tag: string): string[] {
+  const out: string[] = []
+  const re = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'gi')
+  let match: RegExpExecArray | null
+  while ((match = re.exec(block)) !== null) out.push(str(match[1]))
+  return out
+}
+
+/** A duration like PT0H0M0S or PT0M0S is a zero-length (milestone) duration. */
+function isZeroDuration(value: string): boolean {
+  const match = /^PT(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?$/i.exec(str(value))
+  if (!match) return false
+  return (Number(match[1]) || 0) + (Number(match[2]) || 0) / 60 + (Number(match[3]) || 0) / 3600 === 0
+}
+
+interface RawXMLTask {
+  uid: string
+  name: string
+  level: number
+  summary: boolean
+  milestone: boolean
+  startDate?: string
+  dueDate?: string
+  percent: number
+  predecessorUids: string[]
+  assigneeNames: string[]
+  notes: string
+  parentUid?: string
+}
+
+/** Parse a Microsoft Project XML file into UUID-backed tasks with subtasks. */
+export function parseMSProjectXML(xml: string, options: MSProjectImportOptions): MSProjectImportResult {
+  const taskBlocks = xmlBlocks(xml, 'Task')
+  if (taskBlocks.length === 0) {
+    return { tasks: [], unresolvedDependencies: [], unresolvedAssignees: [], errors: ['Not a valid MS Project XML file (no <Task> elements found).'] }
+  }
+
+  // Resources: a task's assignee is a *work* resource (type 1 / person), never
+  // a material (type 0) or cost resource. Many exports mix equipment/fuel rows
+  // in with people, so we filter to real people before mapping assignments.
+  const resourceType = new Map<string, string>()
+  const resourceIsCost = new Map<string, string>()
+  const resourceName = new Map<string, string>()
+  for (const block of xmlBlocks(xml, 'Resource')) {
+    const uid = xmlChild(block, 'UID')
+    if (!uid) continue
+    resourceType.set(uid, xmlChild(block, 'Type'))
+    resourceIsCost.set(uid, xmlChild(block, 'IsCostResource'))
+    const name = decodeXmlEntities(xmlChild(block, 'Name'))
+    if (name) resourceName.set(uid, name)
+  }
+  const isPersonResource = (uid: string): boolean => {
+    const name = resourceName.get(uid)
+    if (!name) return false
+    if (resourceIsCost.get(uid) === '1') return false
+    const type = resourceType.get(uid)
+    // Work resources are type 1; a missing Type (older exports) also implies a
+    // person. Material rows (type 0) and cost rows are excluded.
+    return type === '1' || type === ''
+  }
+
+  // Assignments → ordered list of people per task (TaskUID → resource names).
+  const taskAssignees = new Map<string, string[]>()
+  for (const block of xmlBlocks(xml, 'Assignment')) {
+    const taskUid = xmlChild(block, 'TaskUID')
+    const resourceUid = xmlChild(block, 'ResourceUID')
+    if (!taskUid || !resourceUid || !isPersonResource(resourceUid)) continue
+    const name = resourceName.get(resourceUid)!
+    const names = taskAssignees.get(taskUid) ?? []
+    if (!names.includes(name)) names.push(name)
+    taskAssignees.set(taskUid, names)
+  }
+
+  // Walk tasks in document (outline) order. Parents always precede children, so
+  // the most recent importable task at (level - 1) is the current parent.
+  const raws: RawXMLTask[] = []
+  const lastAtLevel = new Map<number, string>()
+  for (const block of taskBlocks) {
+    const uid = xmlChild(block, 'UID')
+    const name = decodeXmlEntities(xmlChild(block, 'Name'))
+    if (!uid || !name) continue
+
+    let level = Number(xmlChild(block, 'OutlineLevel'))
+    if (!Number.isInteger(level) || level < 0) {
+      const outlineNumber = xmlChild(block, 'OutlineNumber')
+      level = outlineNumber ? outlineNumber.split('.').length : 1
+    }
+    // Level 0 is the file's own project row (its name equals the project) —
+    // importing it would duplicate the parent project. Skip it.
+    if (level <= 0) continue
+
+    const summary = xmlChild(block, 'Summary') === '1'
+    const notes = decodeXmlEntities(xmlChild(block, 'Notes'))
+    const assignees = taskAssignees.get(uid) ?? []
+    raws.push({
+      uid,
+      name,
+      level,
+      summary,
+      milestone: xmlChild(block, 'Milestone') === '1' || (!summary && isZeroDuration(xmlChild(block, 'Duration'))),
+      startDate: parseDate(xmlChild(block, 'Start') || xmlChild(block, 'ManualStart'), options.dateLocale),
+      dueDate: parseDate(xmlChild(block, 'Finish') || xmlChild(block, 'ManualFinish'), options.dateLocale),
+      percent: Number(str(xmlChild(block, 'PercentComplete'))) || 0,
+      predecessorUids: xmlChildren(block, 'PredecessorUID'),
+      assigneeNames: assignees,
+      notes,
+      parentUid: lastAtLevel.get(level - 1),
+    })
+    lastAtLevel.set(level, uid)
+  }
+  if (raws.length === 0) {
+    return { tasks: [], unresolvedDependencies: [], unresolvedAssignees: [], errors: ['The XML has no importable task rows.'] }
+  }
+
+  const userByName = new Map(options.users.map((user) => [normalized(user.name), user]))
+  const idByUid = new Map<string, string>()
+  raws.forEach((raw) => idByUid.set(raw.uid, makeId()))
+
+  const tasks: Task[] = raws.map((raw) => {
+    const id = idByUid.get(raw.uid)!
+    const firstAssignee = raw.assigneeNames[0]
+    const user = firstAssignee ? userByName.get(normalized(firstAssignee)) : undefined
+    const extras = raw.assigneeNames.slice(1)
+    const description = extras.length > 0
+      ? `${raw.notes}${raw.notes ? '\n' : ''}Additional resources: ${extras.join(', ')}`
+      : raw.notes
+    const parentId = raw.parentUid ? idByUid.get(raw.parentUid) : undefined
+    return {
+      id,
+      projectId: options.projectId,
+      projectName: options.projectName,
+      title: raw.name,
+      description,
+      status: statusFromPercent(raw.percent),
+      priority: 'medium' as TaskPriority,
+      assigneeId: user?.id ?? '',
+      assigneeName: user?.name ?? firstAssignee ?? '',
+      startDate: raw.startDate ?? '',
+      dueDate: raw.dueDate ?? '',
+      parentId: parentId ? parentId : undefined,
+      isMilestone: raw.milestone,
+      estimatedHours: 0,
+      loggedHours: 0,
+      phase: options.phase,
+      dependencies: [],
+      tags: [],
+      createdAt: '',
+    }
+  })
+
+  const unresolvedDependencies: UnresolvedDependency[] = []
+  const unresolvedAssignees: UnresolvedAssignee[] = []
+  raws.forEach((raw, index) => {
+    const task = tasks[index]
+    task.dependencies = raw.predecessorUids.flatMap((predecessorUid) => {
+      const resolved = idByUid.get(predecessorUid)
+      if (resolved) return [resolved]
+      unresolvedDependencies.push({ taskName: raw.name, predecessorId: predecessorUid })
+      return []
+    })
+    const firstAssignee = raw.assigneeNames[0]
+    if (firstAssignee && !userByName.has(normalized(firstAssignee))) {
+      unresolvedAssignees.push({ taskName: raw.name, resourceName: firstAssignee })
+    }
+  })
+
+  return { tasks, unresolvedDependencies, unresolvedAssignees, errors: [] }
+}

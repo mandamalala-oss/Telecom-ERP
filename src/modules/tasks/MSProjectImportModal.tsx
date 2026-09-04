@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Upload, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import { parseMSProjectCSV, type MSProjectDateLocale, type MSProjectImportResult } from '@/lib/msProjectImport'
+import { parseMSProjectXML, type MSProjectImportResult } from '@/lib/msProjectImport'
 import type { Project, ProjectPhase, Task, User } from '@/types'
 
 interface Props {
@@ -16,11 +16,10 @@ interface Props {
 
 const phases: ProjectPhase[] = ['survey', 'installation', 'integration', 'atp', 'acceptance']
 
-/** Preview-first importer for the standard MS Project CSV export. */
+/** Preview-first importer for the standard MS Project XML file format. */
 export function MSProjectImportModal({ open, onClose, projects, users, defaultProjectId = '', onConfirm }: Props) {
   const [projectId, setProjectId] = useState(defaultProjectId)
   const [phase, setPhase] = useState<ProjectPhase>('survey')
-  const [dateLocale, setDateLocale] = useState<MSProjectDateLocale>('dmy')
   const [result, setResult] = useState<MSProjectImportResult | null>(null)
   const [fileName, setFileName] = useState('')
   const [reading, setReading] = useState(false)
@@ -31,7 +30,6 @@ export function MSProjectImportModal({ open, onClose, projects, users, defaultPr
     if (!open) return
     setProjectId(defaultProjectId)
     setPhase('survey')
-    setDateLocale('dmy')
     setResult(null)
     setFileName('')
     setError(null)
@@ -44,17 +42,17 @@ export function MSProjectImportModal({ open, onClose, projects, users, defaultPr
     setError(null)
     setFileName(file.name)
     try {
-      const parsed = parseMSProjectCSV(await file.text(), {
+      const parsed = parseMSProjectXML(await file.text(), {
         projectId,
         projectName: project?.name ?? '',
         phase,
-        dateLocale,
+        dateLocale: 'dmy',
         users,
       })
       setResult(parsed)
     } catch (e: any) {
       setResult(null)
-      setError(`Could not read the CSV: ${e?.message ?? String(e)}`)
+      setError(`Could not read the XML: ${e?.message ?? String(e)}`)
     } finally {
       setReading(false)
     }
@@ -97,13 +95,13 @@ export function MSProjectImportModal({ open, onClose, projects, users, defaultPr
         <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 p-3 text-xs text-blue-800 dark:text-blue-200">
           <p className="font-bold mb-1">Export from MS Project</p>
           <ol className="list-decimal list-inside space-y-0.5">
-            <li>File → Save As → CSV (Comma delimited) (*.csv)</li>
-            <li>Export Wizard → Selected data → Task mapping</li>
-            <li>Include ID, Task Name, Start, Finish, % Complete, Predecessors, Resource Names</li>
+            <li>In MS Project: File → Save As → XML Format (*.xml)</li>
+            <li>Choose the saved file below (French or English project files both work)</li>
+            <li>Tasks and subtasks keep their parent/child structure; predecessors become dependencies</li>
           </ol>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
             Project
             <select value={projectId} onChange={(e) => { setProjectId(e.target.value); setResult(null) }} className="select normal-case font-normal text-sm">
@@ -117,19 +115,12 @@ export function MSProjectImportModal({ open, onClose, projects, users, defaultPr
               {phases.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
-          <label className="flex flex-col gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-            CSV date format
-            <select value={dateLocale} onChange={(e) => { setDateLocale(e.target.value as MSProjectDateLocale); setResult(null) }} className="select normal-case font-normal text-sm">
-              <option value="dmy">Day / Month / Year</option>
-              <option value="mdy">Month / Day / Year</option>
-            </select>
-          </label>
         </div>
 
         <label className={`flex items-center justify-center gap-2 rounded-lg border-2 border-dashed p-5 text-sm font-semibold cursor-pointer transition-colors ${canPreview ? 'border-slate-300 dark:border-slate-600 hover:border-brand-400 text-slate-600 dark:text-slate-300' : 'border-slate-200 dark:border-slate-700 text-slate-400 cursor-not-allowed'}`}>
           <Upload className="w-5 h-5" />
-          {reading ? 'Reading CSV…' : fileName || 'Choose an MS Project CSV'}
-          <input type="file" accept=".csv,text/csv" className="hidden" disabled={!canPreview || reading} onChange={(e) => { const file = e.target.files?.[0]; if (file) void readFile(file) }} />
+          {reading ? 'Reading XML…' : fileName || 'Choose an MS Project XML file'}
+          <input type="file" accept=".xml,text/xml,application/xml" className="hidden" disabled={!canPreview || reading} onChange={(e) => { const file = e.target.files?.[0]; if (file) void readFile(file) }} />
         </label>
         {!canPreview && <p className="text-xs text-amber-600">Select a project before choosing the file.</p>}
 
