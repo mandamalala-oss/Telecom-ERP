@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
+import { makeApi } from '@/lib/api/crud'
+import { useAuth } from '@/contexts/AuthContext'
 import { FIELD_CONFIGS, TABLES } from '@/lib/api/entityConfigs'
 import { dependencyCycleMessage, findDependencyCycles, findMissingDependencies, resolveTaskDates, buildTaskHierarchy, computeTaskRollups } from '@/lib/taskTimeline'
 import { KanbanBoard, COLUMNS, isOverdue } from './KanbanBoard'
@@ -29,7 +31,8 @@ const SCHEDULE_FILTERS = [
  * task detail/edit/delete modal — switching tabs never refetches.
  */
 export function TaskBoard() {
-  const { data: projects } = useEntity<Project>(TABLES.projects)
+  const { canEdit } = useAuth()
+  const { data: projects, refresh: refreshProjects } = useEntity<Project>(TABLES.projects)
   const { data: users } = useEntity<User>(TABLES.users)
   const { data: sites } = useEntity<Site>(TABLES.sites)
   const { data: projectSites } = useEntity<ProjectSite>(TABLES.projectSites)
@@ -39,7 +42,7 @@ export function TaskBoard() {
     const candidate = { ...(editing ?? {}), ...values, id: editing?.id ?? '__new-task__' } as Task
     return dependencyCycleMessage(taskRowsRef.current, candidate, editing?.id)
   }
-  const { data: tasks, error, openCreate, openEdit, create, remove, update, modal, editable } = useEntityCrud<Task>(
+  const { data: tasks, error, openCreate, openEdit, create, remove, update, modal, editable, refresh: refreshTasks } = useEntityCrud<Task>(
     TABLES.tasks,
     'Task',
     FIELD_CONFIGS[TABLES.tasks],
@@ -123,6 +126,26 @@ export function TaskBoard() {
       setActionError(null)
       await remove(id)
       setSelected(null)
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    }
+  }
+
+  // Delete a whole project (and, via the projects FK cascade, every task in
+  // it) — the Gantt "delete the project, not one task at a time" action.
+  const deleteProject = async (projectId: string) => {
+    if (!canEdit('projects')) {
+      setActionError('You do not have permission to delete projects.')
+      return
+    }
+    const project = projects.find((p) => p.id === projectId)
+    const taskCount = tasks.filter((t) => t.projectId === projectId).length
+    if (!confirm(`Delete project "${project?.name ?? ''}" and all ${taskCount} of its tasks? This cannot be undone.`)) return
+    try {
+      setActionError(null)
+      await makeApi<Project>(TABLES.projects).remove(projectId)
+      await refreshTasks()
+      await refreshProjects()
     } catch (e: any) {
       setActionError(e.message ?? String(e))
     }
@@ -267,7 +290,7 @@ export function TaskBoard() {
       {tab === 'kanban' ? (
         <KanbanBoard tasks={filteredTasks} onSelect={setSelected} onMove={moveTask} openCreate={openCreate} editable={editable} rollups={rollups} />
       ) : (
-        <GanttView tasks={filteredTasks} onSelect={setSelected} onEdit={openEdit} editable={editable} rollups={rollups} />
+        <GanttView tasks={filteredTasks} onSelect={setSelected} onEdit={openEdit} editable={editable} rollups={rollups} onDeleteProject={deleteProject} />
       )}
 
       {/* Task Detail Modal — shared by both tabs */}

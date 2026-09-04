@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react'
-import { ChevronRight, Link2, Maximize2, Calendar } from 'lucide-react'
+import { ChevronRight, Link2, Maximize2, Calendar, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import {
@@ -65,14 +65,16 @@ interface GanttViewProps {
   editable: boolean
   /** Per-task rollups; parents render as MS Project summaries. */
   rollups?: Map<string, TaskRollup>
+  /** Delete a whole project (and its tasks) — shown on each project group. */
+  onDeleteProject?: (projectId: string) => void
 }
 
 /** Rows and their y offsets inside the timeline, computed in one pass so the
  *  sticky task panel, the bars, and the dependency connectors all align. */
 interface LayoutRow { task: Task; resolved: ReturnType<typeof resolveTaskDates>; groupKey: string; y: number }
-interface LayoutGroup { key: string; name: string; y: number; rowCount: number; collapsed: boolean }
+interface LayoutGroup { key: string; name: string; y: number; rowCount: number; collapsed: boolean; projectId?: string }
 
-export function GanttView({ tasks, onSelect, onEdit, editable, rollups }: GanttViewProps) {
+export function GanttView({ tasks, onSelect, onEdit, editable, rollups, onDeleteProject }: GanttViewProps) {
   const [zoom, setZoom] = useState<(typeof ZOOMS)[number]['key']>('week')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -99,9 +101,9 @@ export function GanttView({ tasks, onSelect, onEdit, editable, rollups }: GanttV
     const groups: LayoutGroup[] = []
     const rows: LayoutRow[] = []
     let y = 0
-    const pushGroup = (key: string, name: string, list: TimelineTask[]) => {
+    const pushGroup = (key: string, name: string, list: TimelineTask[], projectId?: string) => {
       const isCollapsed = collapsed.has(key)
-      groups.push({ key, name, y, rowCount: list.length, collapsed: isCollapsed })
+      groups.push({ key, name, y, rowCount: list.length, collapsed: isCollapsed, projectId })
       y += GROUP_H
       if (isCollapsed) return
       for (const rt of list) {
@@ -109,7 +111,7 @@ export function GanttView({ tasks, onSelect, onEdit, editable, rollups }: GanttV
         y += ROW_H
       }
     }
-    for (const g of projectGroups) pushGroup(g.projectId || g.projectName || 'Other', g.projectName, g.tasks)
+    for (const g of projectGroups) pushGroup(g.projectId || g.projectName || 'Other', g.projectName, g.tasks, g.projectId || undefined)
     if (unscheduled.length > 0) pushGroup('unscheduled', 'Unscheduled Tasks', unscheduled)
     return { groups, rows, contentY: y }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -215,15 +217,26 @@ export function GanttView({ tasks, onSelect, onEdit, editable, rollups }: GanttV
               </div>
               {groups.map((g) => (
                 <div key={g.key}>
-                  <button
-                    onClick={() => toggleGroup(g.key)}
+                  <div
                     style={{ height: GROUP_H }}
                     className="w-full flex items-center gap-1.5 px-3 bg-slate-100 dark:bg-slate-800/60 text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
                   >
-                    <ChevronRight className={`w-3.5 h-3.5 transition-transform ${g.collapsed ? '' : 'rotate-90'}`} />
-                    <span className="truncate flex-1 text-left">{g.name}</span>
-                    <span className="text-[10px] font-semibold text-slate-400">{g.rowCount}</span>
-                  </button>
+                    <button onClick={() => toggleGroup(g.key)} className="flex items-center gap-1.5 flex-1 min-w-0 h-full" aria-label={`Toggle ${g.name}`}>
+                      <ChevronRight className={`w-3.5 h-3.5 transition-transform flex-shrink-0 ${g.collapsed ? '' : 'rotate-90'}`} />
+                      <span className="truncate flex-1 text-left">{g.name}</span>
+                      <span className="text-[10px] font-semibold text-slate-400">{g.rowCount}</span>
+                    </button>
+                    {editable && onDeleteProject && g.projectId && (
+                      <button
+                        onClick={() => onDeleteProject(g.projectId!)}
+                        title={`Delete project ${g.name}`}
+                        aria-label={`Delete project ${g.name}`}
+                        className="p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                   {!g.collapsed && rows
                     .filter((r) => r.groupKey === g.key)
                     .map((r) => {

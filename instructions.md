@@ -123,6 +123,8 @@ The import format switched from **MS Project CSV to the real MS Project XML file
 - CRUD already exists and is unchanged: sites are deleted in the Sites module; tasks ("old gantt entries") are deleted from the Task detail modal.
 - Tests: +2 (tasks site-scoped filter + `clearOnChangeOf`, projects `siteIds` multi-select) → **288/288**, `tsc` clean, build green. No new migration (uses existing `project_sites` / `tasks.site_id`).
 
+**Follow-up (same day): delete a whole project from the Gantt.** Each project group header in the Gantt now has a trash action (editable + project-edit permission) that deletes the project in one step — `tasks.project_id` cascades, so every task under it goes too. `TaskBoard.deleteProject` confirms (with the task count), calls `makeApi('projects').remove`, then refreshes tasks + projects.
+
 ### Milestone 13 — Email confirmation + CEO-grant permissions (pushed `d775f06`)
 
 **Email confirmation flow** (works on localhost AND Vercel):
