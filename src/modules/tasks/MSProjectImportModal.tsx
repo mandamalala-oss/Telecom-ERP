@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Upload, AlertTriangle } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
-import { parseMSProjectXML, type MSProjectImportResult } from '@/lib/msProjectImport'
+import { parseMSProjectXML, type MSProjectImportResult, type TaskAssignmentInfo } from '@/lib/msProjectImport'
+import { buildTaskHierarchy } from '@/lib/taskTimeline'
 import type { Project, ProjectPhase, Task, User } from '@/types'
 
 interface Props {
@@ -15,6 +16,15 @@ interface Props {
 }
 
 const phases: ProjectPhase[] = ['survey', 'installation', 'integration', 'atp', 'acceptance']
+
+/** Human-readable assignee cell: distinguishes a matched user, an unmatched
+ * person, equipment/material/cost resources, and no assignment at all. */
+function renderAssignee(task: Task, info?: TaskAssignmentInfo) {
+  if (info?.matchedName) return <span className="text-slate-500">{info.matchedName}</span>
+  if (info && info.personNames.length > 0) return <span className="text-amber-600">Not matched: {info.personNames[0]}</span>
+  if (info && info.materialNames.length > 0) return <span className="text-slate-400">Equipment: {info.materialNames.join(', ')}</span>
+  return <span className="text-slate-400">No person assigned</span>
+}
 
 /** Preview-first importer for the standard MS Project XML file format. */
 export function MSProjectImportModal({ open, onClose, projects, users, defaultProjectId = '', onConfirm }: Props) {
@@ -36,6 +46,8 @@ export function MSProjectImportModal({ open, onClose, projects, users, defaultPr
   }, [open, defaultProjectId])
 
   const project = projects.find((item) => item.id === projectId)
+  const hierarchy = useMemo(() => (result ? buildTaskHierarchy(result.tasks) : null), [result])
+  const assignmentById = useMemo(() => new Map((result?.assignments ?? []).map((a) => [a.taskId, a])), [result])
 
   const readFile = async (file: File) => {
     setReading(true)
@@ -143,14 +155,23 @@ export function MSProjectImportModal({ open, onClose, projects, users, defaultPr
                   <tr><th className="p-2">Task Name</th><th className="p-2">Start</th><th className="p-2">Finish</th><th className="p-2">Status</th><th className="p-2">Assignee</th><th className="p-2">Predecessors</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {result.tasks.map((task) => <tr key={task.id}>
-                    <td className="p-2 font-semibold text-slate-700 dark:text-slate-200">{task.title}</td>
-                    <td className="p-2 text-slate-500">{task.startDate || '—'}</td>
-                    <td className="p-2 text-slate-500">{task.dueDate || '—'}</td>
-                    <td className="p-2"><span className="capitalize">{task.status.replace('_', ' ')}</span>{task.isMilestone && ' · milestone'}</td>
-                    <td className={`p-2 ${task.assigneeId ? 'text-slate-500' : 'text-amber-600'}`}>{task.assigneeName || 'Unresolved'}</td>
-                    <td className="p-2 text-slate-500">{task.dependencies.length || '—'}</td>
-                  </tr>)}
+                  {result.tasks.map((task) => {
+                    const depth = hierarchy?.depth.get(task.id) ?? 0
+                    const hasChildren = (hierarchy?.children.get(task.id) ?? []).length > 0
+                    const info = assignmentById.get(task.id)
+                    return <tr key={task.id}>
+                      <td className="p-2" style={{ paddingLeft: 8 + depth * 16 }}>
+                        <span className={hasChildren ? 'font-bold text-slate-900 dark:text-white' : 'font-semibold text-slate-700 dark:text-slate-200'}>
+                          {task.title}
+                        </span>
+                      </td>
+                      <td className="p-2 text-slate-500">{task.startDate || '—'}</td>
+                      <td className="p-2 text-slate-500">{task.dueDate || '—'}</td>
+                      <td className="p-2"><span className="capitalize">{task.status.replace('_', ' ')}</span>{task.isMilestone && ' · milestone'}</td>
+                      <td className="p-2">{renderAssignee(task, info)}</td>
+                      <td className="p-2 text-slate-500">{task.dependencies.length || '—'}</td>
+                    </tr>
+                  })}
                 </tbody>
               </table>
             </div>

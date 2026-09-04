@@ -5,6 +5,7 @@ import {
   findDependencyCycles, findMissingDependencies, buildDependencyEdges,
   computeCriticalPath,
   dependencyCycleMessage,
+  buildTaskHierarchy,
 } from './taskTimeline'
 import type { Task } from '@/types'
 
@@ -213,5 +214,34 @@ describe('dependency helpers', () => {
     ]
     expect(computeCriticalPath(tasks)).toEqual(new Set(['a', 'b']))
     expect(computeCriticalPath([{ ...tasks[0], dependencies: ['b'] }, tasks[1]])).toEqual(new Set())
+  })
+})
+
+describe('buildTaskHierarchy', () => {
+  it('derives depth and child lists from parentId', () => {
+    const tasks = [
+      makeTask({ id: 'root', parentId: undefined }),
+      makeTask({ id: 'child', parentId: 'root' }),
+      makeTask({ id: 'grandchild', parentId: 'child' }),
+      makeTask({ id: 'sibling', parentId: 'root' }),
+      makeTask({ id: 'orphan', parentId: 'missing' }),
+    ]
+    const { depth, children } = buildTaskHierarchy(tasks)
+    expect(depth.get('root')).toBe(0)
+    expect(depth.get('child')).toBe(1)
+    expect(depth.get('grandchild')).toBe(2)
+    expect(depth.get('sibling')).toBe(1)
+    expect(children.get('root')).toEqual(['child', 'sibling'])
+    expect(children.get('child')).toEqual(['grandchild'])
+    expect(children.get('missing')).toEqual(['orphan'])
+  })
+
+  it('does not recurse forever on a parent cycle', () => {
+    const { depth } = buildTaskHierarchy([
+      makeTask({ id: 'a', parentId: 'b' }),
+      makeTask({ id: 'b', parentId: 'a' }),
+    ])
+    expect(Number.isInteger(depth.get('a'))).toBe(true)
+    expect(Number.isInteger(depth.get('b'))).toBe(true)
   })
 })

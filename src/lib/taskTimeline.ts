@@ -189,6 +189,52 @@ export function buildTimelineRows(tasks: Task[]): { groups: TaskGroup[]; unsched
   return { groups, unscheduled }
 }
 
+// ── Task hierarchy (parent/child) ───────────────────────────────────────────
+
+export interface TaskHierarchy {
+  /** Task id → nesting depth (0 = top-level, children are deeper). */
+  depth: Map<string, number>
+  /** Parent id → ordered child ids. */
+  children: Map<string, string[]>
+}
+
+/**
+ * Derive nesting depth and child lists from each task's `parentId`. Depth is
+ * memoized per id and guarded against cycles so a cyclic `parentId` graph
+ * terminates (cyclic nodes get a bounded, arbitrary depth rather than
+ * recursing forever).
+ */
+export function buildTaskHierarchy(tasks: { id?: string; parentId?: string }[]): TaskHierarchy {
+  const parentOf = new Map<string, string>()
+  const children = new Map<string, string[]>()
+  for (const task of tasks) {
+    if (!task.id || !task.parentId) continue
+    parentOf.set(task.id, task.parentId)
+    const list = children.get(task.parentId) ?? []
+    list.push(task.id)
+    children.set(task.parentId, list)
+  }
+
+  const depth = new Map<string, number>()
+  const visiting = new Set<string>()
+  const getDepth = (id: string): number => {
+    if (depth.has(id)) return depth.get(id)!
+    const parent = parentOf.get(id)
+    if (!parent || visiting.has(id)) {
+      depth.set(id, 0)
+      return 0
+    }
+    visiting.add(id)
+    const d = getDepth(parent) + 1
+    visiting.delete(id)
+    depth.set(id, d)
+    return d
+  }
+
+  for (const task of tasks) if (task.id) getDepth(task.id)
+  return { depth, children }
+}
+
 // ── Dependencies ────────────────────────────────────────────────────────────
 
 /** All simple cycles in the task dependency graph (each an ordered id path

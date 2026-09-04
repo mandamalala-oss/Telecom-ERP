@@ -96,11 +96,13 @@ describe('parseMSProjectXML', () => {
   <Resources>
     <Resource><UID>10</UID><Name>ALICE LEADER</Name><Type>1</Type><IsCostResource>0</IsCostResource></Resource>
     <Resource><UID>11</UID><Name>FUEL</Name><Type>0</Type><IsCostResource>0</IsCostResource></Resource>
+    <Resource><UID>12</UID><Name>BOB UNKNOWN</Name><Type>1</Type><IsCostResource>0</IsCostResource></Resource>
   </Resources>
   <Assignments>
     <Assignment><TaskUID>2</TaskUID><ResourceUID>10</ResourceUID></Assignment>
     <Assignment><TaskUID>2</TaskUID><ResourceUID>11</ResourceUID></Assignment>
     <Assignment><TaskUID>3</TaskUID><ResourceUID>99</ResourceUID></Assignment>
+    <Assignment><TaskUID>5</TaskUID><ResourceUID>12</ResourceUID></Assignment>
   </Assignments>
 </Project>`
 
@@ -145,7 +147,27 @@ describe('parseMSProjectXML', () => {
     expect(byTitle['COMMISSIONING'].isMilestone).toBe(true)
     expect(preparation.isMilestone).toBe(false)
     expect(result.unresolvedDependencies).toEqual([])
-    expect(result.unresolvedAssignees).toEqual([])
+    // Only the unmatched *person* resource is flagged; equipment/material is not.
+    expect(result.unresolvedAssignees).toEqual([{ taskName: 'ON-SITE TEST', resourceName: 'BOB UNKNOWN' }])
+  })
+
+  it('breaks assignments into people vs. material and reports the match', () => {
+    const result = parseMSProjectXML(SAMPLE, options)
+    const byId = new Map(result.assignments!.map((a) => [a.taskId, a]))
+    const byTitle = Object.fromEntries(result.tasks.map((t) => [t.title, t]))
+
+    const preparation = byId.get(byTitle['PREPARATION'].id)!
+    expect(preparation).toMatchObject({
+      personNames: ['ALICE LEADER'],
+      materialNames: ['FUEL'],
+      matchedName: 'Alice Leader',
+    })
+
+    const onSiteTest = byId.get(byTitle['ON-SITE TEST'].id)!
+    expect(onSiteTest).toMatchObject({ personNames: ['BOB UNKNOWN'], materialNames: [], matchedName: undefined })
+
+    // TRAVEL & CAR had only an unknown resource uid → no people, no material.
+    expect(byId.get(byTitle['TRAVEL & CAR'].id)!).toMatchObject({ personNames: [], materialNames: [] })
   })
 
   it('reports a non-XML payload', () => {

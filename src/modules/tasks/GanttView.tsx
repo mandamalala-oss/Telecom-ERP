@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import {
   buildTimelineRows, buildDependencyEdges, parseDay, formatDay, todayISO,
-  timelineRange, barPosition, resolveTaskDates, computeCriticalPath,
+  timelineRange, barPosition, resolveTaskDates, computeCriticalPath, buildTaskHierarchy,
   type TimelineTask, type ResolvedTaskDates, type TaskScheduleStatus,
 } from '@/lib/taskTimeline'
 import type { Task, TaskStatus } from '@/types'
@@ -79,6 +79,7 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
   const range = useMemo(() => timelineRange(tasks), [tasks])
   const edges = useMemo(() => buildDependencyEdges(tasks), [tasks])
   const criticalPath = useMemo(() => computeCriticalPath(tasks), [tasks])
+  const hierarchy = useMemo(() => buildTaskHierarchy(tasks), [tasks])
   const todayDay = parseDay(todayISO())
 
   // Flat layout (group headers + rows) shared by the left panel, the bars and
@@ -214,7 +215,10 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
                   </button>
                   {!g.collapsed && rows
                     .filter((r) => r.groupKey === g.key)
-                    .map((r) => (
+                    .map((r) => {
+                      const depth = hierarchy.depth.get(r.task.id!) ?? 0
+                      const hasChildren = (hierarchy.children.get(r.task.id!) ?? []).length > 0
+                      return (
                       <div
                         key={r.task.id}
                         role="button"
@@ -222,13 +226,13 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
                         aria-label={`Task ${r.task.title}`}
                         onClick={() => { setSelectedId(r.task.id!); onSelect(r.task) }}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelectedId(r.task.id!); onSelect(r.task) } }}
-                        style={{ height: ROW_H }}
-                        className={`flex flex-col justify-center gap-0.5 px-3 border-b border-slate-100 dark:border-slate-800 cursor-pointer transition-colors ${
+                        style={{ height: ROW_H, paddingLeft: 12 + depth * 16 }}
+                        className={`flex flex-col justify-center gap-0.5 pr-3 border-b border-slate-100 dark:border-slate-800 cursor-pointer transition-colors ${
                           selectedId === r.task.id ? 'bg-brand-50 dark:bg-brand-900/20' : 'hover:bg-slate-50 dark:hover:bg-slate-800/50'
                         }`}
                       >
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 truncate flex-1">{r.task.title}</p>
+                          <p className={`text-xs truncate flex-1 ${hasChildren ? 'font-bold text-slate-900 dark:text-slate-50' : 'font-semibold text-slate-800 dark:text-slate-100'}`}>{r.task.title}</p>
                           <Badge status={r.task.status} className="text-[10px]" />
                         </div>
                         <div className="flex items-center gap-1.5 text-[10px] text-slate-400 min-w-0">
@@ -250,7 +254,8 @@ export function GanttView({ tasks, onSelect, onEdit, editable }: GanttViewProps)
                           )}
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
                 </div>
               ))}
               {groups.length === 0 && (

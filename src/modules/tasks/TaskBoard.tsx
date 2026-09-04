@@ -6,7 +6,7 @@ import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { useEntity } from '@/lib/hooks/useEntity'
 import { FIELD_CONFIGS, TABLES } from '@/lib/api/entityConfigs'
-import { dependencyCycleMessage, findDependencyCycles, findMissingDependencies, resolveTaskDates } from '@/lib/taskTimeline'
+import { dependencyCycleMessage, findDependencyCycles, findMissingDependencies, resolveTaskDates, buildTaskHierarchy } from '@/lib/taskTimeline'
 import { KanbanBoard, COLUMNS, isOverdue } from './KanbanBoard'
 import { GanttView } from './GanttView'
 import { MSProjectImportModal } from './MSProjectImportModal'
@@ -60,6 +60,7 @@ export function TaskBoard() {
   const [missingDependenciesDismissed, setMissingDependenciesDismissed] = useState(false)
 
   const missingDependencies = useMemo(() => findMissingDependencies(tasks), [tasks])
+  const hierarchy = useMemo(() => buildTaskHierarchy(tasks), [tasks])
 
   const filteredTasks = useMemo(() => tasks.filter((t) => {
     if (filterProject !== 'all' && t.projectId !== filterProject) return false
@@ -119,6 +120,10 @@ export function TaskBoard() {
 
   const totalHours = filteredTasks.reduce((s, t) => s + (t.estimatedHours ?? 0), 0)
   const loggedHours = filteredTasks.reduce((s, t) => s + (t.loggedHours ?? 0), 0)
+  const parentTask = selected?.parentId ? tasks.find((t) => t.id === selected.parentId) : undefined
+  const subtaskList = selected
+    ? (hierarchy.children.get(selected.id!) ?? []).map((id) => tasks.find((t) => t.id === id)).filter((t): t is Task => !!t)
+    : []
 
   return (
     <div className="space-y-4">
@@ -242,6 +247,7 @@ export function TaskBoard() {
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {[
                 { l: 'Project',   v: selected.projectName },
+                ...(parentTask ? [{ l: 'Parent', v: parentTask.title }] : []),
                 { l: 'Phase',     v: selected.phase },
                 { l: 'Assignee',  v: selected.assigneeName },
                 { l: 'Start',     v: selected.startDate || '—' },
@@ -262,6 +268,22 @@ export function TaskBoard() {
               <div>
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Description</p>
                 <p className="text-sm text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-700/40 rounded-lg p-3">{selected.description}</p>
+              </div>
+            )}
+            {subtaskList.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Subtasks</p>
+                <div className="flex flex-wrap gap-2">
+                  {subtaskList.map((sub) => (
+                    <button
+                      key={sub.id}
+                      onClick={() => setSelected(sub)}
+                      className="text-xs bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                    >
+                      {sub.title}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
             <div>

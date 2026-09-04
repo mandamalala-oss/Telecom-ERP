@@ -20,10 +20,23 @@ export interface UnresolvedAssignee {
   resourceName: string
 }
 
+/** Per-task assignment breakdown for the import preview. */
+export interface TaskAssignmentInfo {
+  taskId: string
+  /** Work (person) resources assigned, in file order. */
+  personNames: string[]
+  /** Equipment/material/cost resources assigned — intentionally not assignees. */
+  materialNames: string[]
+  /** ERP user name the first person name matched, if any. */
+  matchedName?: string
+}
+
 export interface MSProjectImportResult {
   tasks: Task[]
   unresolvedDependencies: UnresolvedDependency[]
   unresolvedAssignees: UnresolvedAssignee[]
+  /** Present for XML imports; keyed to each imported task by id. */
+  assignments?: TaskAssignmentInfo[]
   errors: string[]
 }
 
@@ -310,6 +323,7 @@ interface RawXMLTask {
   percent: number
   predecessorUids: string[]
   assigneeNames: string[]
+  materialNames: string[]
   notes: string
   parentUid?: string
 }
@@ -323,7 +337,8 @@ export function parseMSProjectXML(xml: string, options: MSProjectImportOptions):
 
   // Resources: a task's assignee is a *work* resource (type 1 / person), never
   // a material (type 0) or cost resource. Many exports mix equipment/fuel rows
-  // in with people, so we filter to real people before mapping assignments.
+  // in with people, so we split assignments into people vs. material/cost and
+  // surface both to the preview instead of silently treating either wrong.
   const resourceType = new Map<string, string>()
   const resourceIsCost = new Map<string, string>()
   const resourceName = new Map<string, string>()
@@ -345,16 +360,18 @@ export function parseMSProjectXML(xml: string, options: MSProjectImportOptions):
     return type === '1' || type === ''
   }
 
-  // Assignments → ordered list of people per task (TaskUID → resource names).
+  // Assignments → ordered people per task and ordered material/cost names.
   const taskAssignees = new Map<string, string[]>()
+  const taskMaterials = new Map<string, string[]>()
   for (const block of xmlBlocks(xml, 'Assignment')) {
     const taskUid = xmlChild(block, 'TaskUID')
     const resourceUid = xmlChild(block, 'ResourceUID')
-    if (!taskUid || !resourceUid || !isPersonResource(resourceUid)) continue
-    const name = resourceName.get(resourceUid)!
-    const names = taskAssignees.get(taskUid) ?? []
+    const name = resourceName.get(resourceUid)
+    if (!taskUid || !resourceUid || !name) continue
+    const target = isPersonResource(resourceUid) ? taskAssignees : taskMaterials
+    const names = target.get(taskUid) ?? []
     if (!names.includes(name)) names.push(name)
-    taskAssignees.set(taskUid, names)
+    target.set(taskUid, names)
   }
 
   // Walk tasks in document (outline) order. Parents always precede children, so
@@ -389,6 +406,7 @@ export function parseMSProjectXML(xml: string, options: MSProjectImportOptions):
       percent: Number(str(xmlChild(block, 'PercentComplete'))) || 0,
       predecessorUids: xmlChildren(block, 'PredecessorUID'),
       assigneeNames: assignees,
+      materialNames: taskMaterials.get(uid) ?? [],
       notes,
       parentUid: lastAtLevel.get(level - 1),
     })
@@ -402,7 +420,9 @@ export function parseMSProjectXML(xml: string, options: MSProjectImportOptions):
   const idByUid = new Map<string, string>()
   raws.forEach((raw) => idByUid.set(raw.uid, makeId()))
 
-  const tasks: Task[] = raws.map((raw) => {
+  const tasks: Task[] = []
+  const assignments: TaskAssignmentInfo[] = []
+  raws.forEach((raw) => {
     const id = idByUid.get(raw.uid)!
     const firstAssignee = raw.assigneeNames[0]
     const user = firstAssignee ? userByName.get(normalized(firstAssignee)) : undefined
@@ -411,7 +431,7 @@ export function parseMSProjectXML(xml: string, options: MSProjectImportOptions):
       ? `${raw.notes}${raw.notes ? '\n' : ''}Additional resources: ${extras.join(', ')}`
       : raw.notes
     const parentId = raw.parentUid ? idByUid.get(raw.parentUid) : undefined
-    return {
+    tasks.push({
       id,
       projectId: options.projectId,
       projectName: options.projectName,
@@ -431,7 +451,13 @@ export function parseMSProjectXML(xml: string, options: MSProjectImportOptions):
       dependencies: [],
       tags: [],
       createdAt: '',
-    }
+    })
+    assignments.push({
+      taskId: id,
+      personNames: raw.assigneeNames,
+      materialNames: raw.materialNames,
+      matchedName: user?.name,
+    })
   })
 
   const unresolvedDependencies: UnresolvedDependency[] = []
@@ -444,11 +470,14 @@ export function parseMSProjectXML(xml: string, options: MSProjectImportOptions):
       unresolvedDependencies.push({ taskName: raw.name, predecessorId: predecessorUid })
       return []
     })
+    // Only a *person* resource that can't be matched to an ERP user is flagged
+    // as unresolved. Equipment/material/cost resources are expected and shown
+    // separately in the preview, not reported as missing assignees.
     const firstAssignee = raw.assigneeNames[0]
     if (firstAssignee && !userByName.has(normalized(firstAssignee))) {
       unresolvedAssignees.push({ taskName: raw.name, resourceName: firstAssignee })
     }
   })
 
-  return { tasks, unresolvedDependencies, unresolvedAssignees, errors: [] }
+  return { tasks, unresolvedDependencies, unresolvedAssignees, assignments, errors: [] }
 }

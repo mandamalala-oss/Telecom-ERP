@@ -101,6 +101,11 @@ The import format switched from **MS Project CSV to the real MS Project XML file
 - Tests: +3 inline XML fixture tests (hierarchy/parentId, decode+predecessors+milestones, non-XML guard) + 1 real-sample test (root skipped, subtasks nested under the right summary) → **279/279**, `tsc` clean, build green.
 - **Run `database/migrations/033_task_parent_id.sql` on the live DB** (idempotent).
 
+**Follow-up (same day): assignment clarity + hierarchy indentation.** The import preview used to show every blank assignee as "Unresolved" (the Nokia file has no people — only equipment/material resources like FUEL/4X4 RENT, so it read as 11 bogus unresolved rows). Now:
+- `parseMSProjectXML` splits each task's assignments into **people vs. material/cost** and returns an `assignments` breakdown; only an unmatched *person* resource is flagged unresolved. The preview's Assignee cell shows one of: matched user name / `Not matched: <name>` / `Equipment: <names>` / `No person assigned`.
+- **Indentation**: `buildTaskHierarchy` (new pure helper in `taskTimeline.ts`) computes depth + children from `parentId` (cycle-guarded). The preview indents rows by depth and bolds summary parents; the **Gantt** indents task rows and bolds parents; the **task detail modal** shows the parent task and a clickable Subtasks list.
+- Tests: +2 `buildTaskHierarchy` (depths/children + cycle), +1 XML assignments breakdown, updated unresolved-assignee assertion → **282/282**, `tsc` clean, build green.
+
 ### Milestone 13 — Email confirmation + CEO-grant permissions (pushed `d775f06`)
 
 **Email confirmation flow** (works on localhost AND Vercel):
