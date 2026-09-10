@@ -26,6 +26,7 @@ export const TABLES = {
   integrationRecords: 'integration_records',
   atpTemplates: 'atp_templates',
   atpRecords: 'atp_records',
+  acceptanceCertificates: 'acceptance_certificates',
   boqs: 'boqs',
   catalogItems: 'catalog_items',
   assets: 'assets',
@@ -64,6 +65,7 @@ export const TABLE_MODULE: Record<string, string> = {
   integrationRecords: 'projects',
   atpTemplates: 'projects', // ATP is guarded by 'projects'
   atpRecords: 'projects',
+  acceptanceCertificates: 'projects', // PAC/FAC live inside the ATP module
   boqs: 'finance', // BOQ is guarded by 'finance'
   assets: 'inventory',
   employees: 'dashboard', // Resources is guarded by 'dashboard'
@@ -427,6 +429,20 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'overallResult', label: 'Overall Result', type: 'select', options: ['pass', 'fail', 'partial'] },
     { key: 'engineerName', label: 'Engineer', type: 'text' },
     { key: 'customerRepresentative', label: 'Customer Rep', type: 'text' },
+    { key: 'comments', label: 'Comments', type: 'textarea' },
+  ],
+  acceptance_certificates: [
+    { key: 'certificateNumber', label: 'Certificate Number', type: 'text', required: true, placeholder: 'PAC-2026-001' },
+    { key: 'type', label: 'Type', type: 'select', options: ['PAC', 'FAC'], chips: true },
+    { key: 'siteCode', label: 'Site Code', type: 'select', lookup: { table: 'sites', valueKey: 'siteId', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId', populate: { siteName: 'name', siteId: 'id' } } },
+    { key: 'siteName', label: 'Site Name', type: 'text' },
+    { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
+    { key: 'atpNumber', label: 'ATP Record', type: 'select', lookup: { table: 'atp_records', valueKey: 'atpNumber', labelKey: 'atpNumber', populate: { atpRecordId: 'id', siteName: 'siteName', siteCode: 'siteCode' } } },
+    { key: 'status', label: 'Status', type: 'select', options: ['draft', 'submitted', 'reviewed', 'issued', 'signed', 'rejected'] },
+    { key: 'engineerName', label: 'Engineer', type: 'text' },
+    { key: 'customerRepresentative', label: 'Customer Rep', type: 'text' },
+    { key: 'dlpStartDate', label: 'DLP Start', type: 'date' },
+    { key: 'dlpEndDate', label: 'DLP End', type: 'date' },
     { key: 'comments', label: 'Comments', type: 'textarea' },
   ],
   boqs: [

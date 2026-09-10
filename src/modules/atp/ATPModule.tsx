@@ -6,10 +6,14 @@ import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { TABLES } from '@/lib/api/entityConfigs'
-import type { ATPRecord, ATPTemplate, ATPResult } from '@/types/v2'
+import type { ATPRecord, ATPTemplate, ATPResult, AcceptanceCertificate } from '@/types/v2'
 import { clsx } from 'clsx'
 
 const STATUS_FLOW = ['draft','submitted','reviewed','approved','customer_accepted','failed']
+const CERT_STATUS_FLOW = ['draft','submitted','reviewed','issued','signed','rejected']
+const CERT_TABS = ['records','templates','pac','fac'] as const
+type CertTab = typeof CERT_TABS[number]
+const TAB_LABEL: Record<CertTab, string> = { records: 'Records', templates: 'Templates', pac: 'PAC', fac: 'FAC' }
 
 function ResultIcon({ result }: { result: ATPResult['result'] }) {
   if (result === 'pass') return <CheckCircle className="w-4 h-4 text-green-500" />
@@ -21,10 +25,22 @@ function ResultIcon({ result }: { result: ATPResult['result'] }) {
 export function ATPModule() {
   const { data: records, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<ATPRecord>(TABLES.atpRecords, 'ATP Record')
   const { data: templates, openCreate: newTemplate, openEdit: editTemplate, remove: removeTemplate, modal: templateModal } = useEntityCrud<ATPTemplate>(TABLES.atpTemplates, 'ATP Template')
-  const [tab, setTab] = useState<'records'|'templates'>('records')
+  const [tab, setTab] = useState<CertTab>('records')
+  // PAC/FAC share one table; the active tab drives the certificate type on
+  // create, while edits keep whatever type the row already has.
+  const { data: certData, loading: certLoading, error: certError, openCreate: openCertCreate, openEdit: openCertEdit, remove: removeCert, modal: certModal } = useEntityCrud<AcceptanceCertificate>(
+    TABLES.acceptanceCertificates,
+    'Certificate',
+    undefined, undefined,
+    (v, editing) => ({ ...v, type: editing?.type ?? v.type ?? (tab === 'fac' ? 'FAC' : 'PAC') })
+  )
   const [selRecord, setSelRecord] = useState<ATPRecord | null>(null)
   const [selTemplate, setSelTemplate] = useState<ATPTemplate | null>(null)
+  const [selCert, setSelCert] = useState<AcceptanceCertificate | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+
+  const isCertTab = tab === 'pac' || tab === 'fac'
+  const certs = certData.filter(c => c.type === (tab === 'fac' ? 'FAC' : 'PAC'))
 
   const totalPass = records.filter(r => r.overallResult === 'pass').length
   const totalFail = records.filter(r => r.overallResult === 'fail').length
@@ -53,6 +69,17 @@ export function ATPModule() {
     }
   }
 
+  const handleDeleteCert = async (id: string) => {
+    if (!confirm('Delete this certificate?')) return
+    try {
+      setActionError(null)
+      await removeCert(id)
+      setSelCert(null)
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    }
+  }
+
   return (
     <div className="space-y-5">
       {/* KPI Row */}
@@ -72,18 +99,21 @@ export function ATPModule() {
 
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
         <div className="flex gap-1 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg">
-          {(['records','templates'] as const).map(t => (
+          {CERT_TABS.map(t => (
             <button key={t} onClick={() => setTab(t)}
-              className={`px-4 py-1.5 text-sm font-semibold rounded-md capitalize transition-all ${tab===t ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'}`}>
-              {t}
+              className={`px-4 py-1.5 text-sm font-semibold rounded-md transition-all ${tab===t ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-900 dark:text-white' : 'text-slate-500'}`}>
+              {TAB_LABEL[t]}
             </button>
           ))}
         </div>
-        <Button icon={<Plus className="w-4 h-4"/>} onClick={tab === 'records' ? openCreate : newTemplate}>New {tab === 'records' ? 'ATP' : 'Template'}</Button>
+        <Button icon={<Plus className="w-4 h-4"/>}
+          onClick={tab === 'records' ? openCreate : tab === 'templates' ? newTemplate : openCertCreate}>
+          New {tab === 'records' ? 'ATP' : tab === 'templates' ? 'Template' : tab === 'pac' ? 'PAC' : 'FAC'}
+        </Button>
       </div>
-      {error && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{error}</div>}
+      {(isCertTab ? certError : error) && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{isCertTab ? certError : error}</div>}
       {actionError && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{actionError}</div>}
-      {loading && <p className="text-xs text-slate-500">Loading…</p>}
+      {(isCertTab ? certLoading : loading) && <p className="text-xs text-slate-500">Loading…</p>}
 
       {tab === 'records' && (
         <Card padding={false}>
@@ -141,6 +171,36 @@ export function ATPModule() {
             </Card>
           ))}
         </div>
+      )}
+
+      {isCertTab && (
+        <Card padding={false}>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead><tr>
+                {['Certificate','Site','Project','ATP','Status','DLP End','Customer Rep','Signed','Issued'].map(h => <th key={h} className="th">{h}</th>)}
+              </tr></thead>
+              <tbody>
+                {certs.map(c => (
+                  <tr key={c.id} className="tr-hover cursor-pointer" onClick={() => setSelCert(c)}>
+                    <td className="td font-mono text-xs font-bold text-brand-600 dark:text-brand-400">{c.certificateNumber}</td>
+                    <td className="td"><p className="font-semibold text-sm">{c.siteName ?? '—'}</p><p className="text-xs text-slate-400">{c.siteCode}</p></td>
+                    <td className="td text-xs text-slate-500">{c.projectName ?? '—'}</td>
+                    <td className="td text-xs text-slate-500">{c.atpNumber ?? '—'}</td>
+                    <td className="td"><Badge status={c.status} /></td>
+                    <td className="td text-xs text-slate-500">{c.dlpEndDate ?? '—'}</td>
+                    <td className="td text-xs text-slate-500">{c.customerRepresentative ?? '—'}</td>
+                    <td className="td text-xs">{c.customerSignature ? <span className="text-green-600 font-bold">✓</span> : <span className="text-slate-400">—</span>}</td>
+                    <td className="td text-xs text-slate-400">{c.issuedAt ?? '—'}</td>
+                  </tr>
+                ))}
+                {certs.length === 0 && (
+                  <tr><td colSpan={9} className="td text-center text-sm text-slate-400 py-8">No {tab.toUpperCase()} certificates yet.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
 
       {/* ATP Record Detail */}
@@ -293,8 +353,89 @@ export function ATPModule() {
         </Modal>
       )}
 
+      {/* PAC / FAC Certificate Detail */}
+      {selCert && (
+        <Modal open title={`${selCert.type} ${selCert.certificateNumber}`} onClose={() => setSelCert(null)} size="xl"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDeleteCert(selCert.id!)}>Delete</Button>
+              <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { openCertEdit(selCert); setSelCert(null) }}>Edit</Button>
+            </div>
+          }>
+          <div className="space-y-5">
+            <div className="flex items-center gap-1 overflow-x-auto pb-1">
+              {CERT_STATUS_FLOW.map((st, i) => {
+                const isRejected = selCert.status === 'rejected'
+                const idx = isRejected ? CERT_STATUS_FLOW.length - 1 : CERT_STATUS_FLOW.indexOf(selCert.status)
+                const done = isRejected ? false : i <= idx
+                const rejectedStep = isRejected && st === 'rejected'
+                return (
+                  <div key={st} className="flex items-center flex-shrink-0">
+                    <div className={clsx('flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-bold',
+                      rejectedStep ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' :
+                      done ? 'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400' : 'bg-slate-100 text-slate-400 dark:bg-slate-700')}>
+                      {rejectedStep ? '✗' : done ? '✓' : i + 1} {st.replace('_',' ')}
+                    </div>
+                    {i < CERT_STATUS_FLOW.length - 1 && <div className="w-4 h-0.5 bg-slate-200 dark:bg-slate-700 mx-0.5 flex-shrink-0" />}
+                  </div>
+                )
+              })}
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {[
+                {l:'Site',v:selCert.siteName ?? '—'},{l:'Code',v:selCert.siteCode ?? '—'},
+                {l:'Project',v:selCert.projectName ?? '—'},{l:'ATP Record',v:selCert.atpNumber ?? '—'},
+                {l:'Engineer',v:selCert.engineerName ?? '—'},{l:'Customer Rep',v:selCert.customerRepresentative ?? '—'},
+                {l:'DLP Start',v:selCert.dlpStartDate ?? '—'},{l:'DLP End',v:selCert.dlpEndDate ?? '—'},
+                {l:'Issued',v:selCert.issuedAt ?? '—'},{l:'Signed',v:selCert.signedAt ?? '—'},
+              ].map(item => (
+                <div key={item.l} className="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500 font-semibold uppercase tracking-wide">{item.l}</p>
+                  <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">{item.v}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Punch list — FAC cannot be issued while items are still open */}
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Punch List ({(selCert.punchList??[]).length})</p>
+              {(selCert.punchList??[]).length === 0
+                ? <p className="text-sm text-green-600 font-semibold">✓ No punch list items</p>
+                : (selCert.punchList??[]).map(item => (
+                    <div key={item.id} className={clsx('flex items-start gap-3 p-3 rounded-lg border mb-2',
+                      item.status==='resolved' ? 'bg-green-50 dark:bg-green-900/10 border-green-100 dark:border-green-900/30' : 'bg-amber-50 dark:bg-amber-900/10 border-amber-100 dark:border-amber-900/30')}>
+                      <Badge status={item.severity} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-900 dark:text-white">{item.description}</p>
+                        <p className="text-xs text-slate-500">{item.status === 'resolved' ? `Resolved${item.resolvedBy ? ` by ${item.resolvedBy}` : ''}${item.resolvedAt ? ` · ${item.resolvedAt}` : ''}` : 'Open'}</p>
+                      </div>
+                    </div>
+                  ))}
+            </div>
+
+            {/* Signatures */}
+            <div className="grid grid-cols-2 gap-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+              <div className={clsx('rounded-lg p-3 text-center', selCert.engineerSignature ? 'bg-green-50 dark:bg-green-900/20' : 'bg-slate-50 dark:bg-slate-700/30')}>
+                <p className="text-xs text-slate-500 mb-1">Engineer Signature</p>
+                {selCert.engineerSignature ? <p className="text-sm font-bold text-green-700 dark:text-green-400">✓ {selCert.engineerName}</p> : <p className="text-sm text-slate-400 italic">Pending</p>}
+              </div>
+              <div className={clsx('rounded-lg p-3 text-center', selCert.customerSignature ? 'bg-green-50 dark:bg-green-900/20' : 'bg-slate-50 dark:bg-slate-700/30')}>
+                <p className="text-xs text-slate-500 mb-1">Customer Signature</p>
+                {selCert.customerSignature ? <p className="text-sm font-bold text-green-700 dark:text-green-400">✓ {selCert.customerRepresentative}</p> : <p className="text-sm text-slate-400 italic">Pending</p>}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <Button variant="secondary" icon={<Download className="w-4 h-4"/>}>Export PDF</Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {modal}
       {templateModal}
+      {certModal}
     </div>
   )
 }

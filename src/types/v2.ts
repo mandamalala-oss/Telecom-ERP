@@ -227,6 +227,41 @@ export interface ATPRecord {
   createdAt: string
 }
 
+// ─── ACCEPTANCE CERTIFICATES (PAC / FAC) ─────────────────────
+// ATP stays the test evidence; a certificate is the formal customer
+// acceptance that follows it. PAC = preliminary (after install + passing
+// ATP); FAC = final (after the defect liability period, punch list closed).
+
+export type AcceptanceCertificateType = 'PAC' | 'FAC'
+export type AcceptanceCertificateStatus = 'draft' | 'submitted' | 'reviewed' | 'issued' | 'signed' | 'rejected'
+
+export interface AcceptanceCertificate {
+  id: string
+  certificateNumber: string
+  type: AcceptanceCertificateType
+  siteId?: string
+  siteName?: string
+  siteCode?: string
+  projectId?: string
+  projectName?: string
+  atpRecordId?: string
+  atpNumber?: string
+  status: AcceptanceCertificateStatus
+  punchList: PunchListItem[]
+  dlpStartDate?: string
+  dlpEndDate?: string
+  previousCertificateId?: string
+  engineerName?: string
+  engineerSignature?: string
+  customerRepresentative?: string
+  customerSignature?: string
+  issuedAt?: string
+  signedAt?: string
+  pdfUrl?: string
+  comments?: string
+  createdAt: string
+}
+
 // ─── BOQ MODULE ──────────────────────────────────────────────
 
 export type BOQStatus = 'draft' | 'submitted' | 'approved' | 'revised' | 'superseded'

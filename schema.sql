@@ -17,7 +17,7 @@ create extension if not exists pgcrypto;
 -- ─── Clean slate (app tables only) ─────────────────────────────
 drop table if exists
   contracts, documents, subcontractors, purchase_requests, tools, vehicles,
-  employees, assets, boqs, atp_records, atp_templates, integration_records,
+  employees, assets, boqs, acceptance_certificates, atp_records, atp_templates, integration_records,
   installation_records, survey_reports, evm_metrics, payments, purchase_orders,
   invoices, quotes, stock_movements, inventory_items, warehouses, tasks,
   projects, sites, contacts, companies, opportunities, leads, users
@@ -505,6 +505,38 @@ create table atp_records (
   pdf_url                 text,
   comments                text,
   created_at              timestamptz default now()
+);
+
+-- ─── ACCEPTANCE CERTIFICATES (PAC / FAC) ────────────────────────
+-- ATP is the test evidence; a certificate is the formal customer
+-- acceptance. PAC (preliminary) follows a passing ATP; FAC (final) follows
+-- the defect liability period once every punch-list item is closed.
+create table acceptance_certificates (
+  id                      uuid primary key default gen_random_uuid(),
+  certificate_number      text unique not null,
+  type                    text not null check (type in ('PAC','FAC')),
+  site_id                 uuid,
+  site_name               text,
+  site_code               text,
+  project_id              uuid,
+  project_name            text,
+  atp_record_id           uuid references atp_records(id),
+  atp_number              text,
+  status                  text not null default 'draft' check (status in ('draft','submitted','reviewed','issued','signed','rejected')),
+  punch_list              jsonb default '[]',
+  dlp_start_date          date,
+  dlp_end_date            date,
+  previous_certificate_id uuid references acceptance_certificates(id),
+  engineer_name           text,
+  engineer_signature      text,
+  customer_representative text,
+  customer_signature      text,
+  issued_at               timestamptz,
+  signed_at               timestamptz,
+  pdf_url                 text,
+  comments                text,
+  created_at              timestamptz default now(),
+  updated_at              timestamptz default now()
 );
 
 -- ─── BOQ ────────────────────────────────────────────────────────

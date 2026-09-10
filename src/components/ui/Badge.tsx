@@ -25,6 +25,8 @@ const statusMap: Record<string, string> = {
   quality_check: 'purple', integrated: 'green',
   // atp
   submitted: 'blue', reviewed: 'purple', customer_accepted: 'green', failed: 'red',
+  // acceptance certificates (PAC / FAC)
+  issued: 'cyan', signed: 'green',
   // priority
   low: 'slate', medium: 'blue', high: 'amber', critical: 'red',
   // lead/opp
