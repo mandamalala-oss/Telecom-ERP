@@ -79,6 +79,9 @@ export interface Company {
   id: string;
   name: string;
   type: CompanyType;
+  /** Equipment vendor (Nokia / Huawei / other). Source of truth for the
+   * vendor grouping of this customer's sites — never stored on a Site. */
+  vendor?: string;
   country: string;
   city: string;
   address: string;

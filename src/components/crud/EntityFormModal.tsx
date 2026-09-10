@@ -8,6 +8,7 @@ import { buildPayload } from '@/lib/formPayload'
 import { parseQuoteWorkbook } from '@/lib/quoteImport'
 import { PERMISSION_MODULES } from '@/types'
 import { ItemPickerModal } from './ItemPickerModal'
+import { GroupedMultiSelect, type GroupedOption } from './GroupedMultiSelect'
 import type { BOQItem, NetworkType } from '@/types/v2'
 
 export type FieldType = 'text' | 'textarea' | 'number' | 'date' | 'select' | 'checkbox' | 'tags' | 'multiSelect' | 'sitePicker' | 'permissions' | 'lineItems' | 'catalogItems'
@@ -82,6 +83,13 @@ export interface FieldConfig {
   /** Reset this field to empty whenever another field (key) changes — e.g. a
    * site selector cleared when the project changes. */
   clearOnChangeOf?: string
+  /** `multiSelect` only: render a searchable, grouped combobox (removable
+   * tags) instead of the checkbox grid. Groups are resolved by joining the
+   * option row (`keyField`) to the group table (`groupKey`) and showing
+   * `groupLabel` — e.g. site.customerId → companies.id, label companies.vendor.
+   * The group table must be loaded as a lookup by some field in the form (or
+   * it is auto-fetched by the modal). */
+  groupBy?: { table: string; keyField: string; groupKey: string; groupLabel: string }
 }
 
 /** One column of a configurable `lineItems` editor row. */
@@ -184,12 +192,19 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
   useEffect(() => {
     if (!open) return
     let cancelled = false
-    const tables = [...new Set(fields.filter((f) => f.lookup).map((f) => f.lookup!.table))]
+    // Reference tables come from lookup fields AND grouped-multiSelect fields
+    // (their group table, e.g. companies for the site vendor grouping).
+    const tables = [...new Set([
+      ...fields.filter((f) => f.lookup).map((f) => f.lookup!.table),
+      ...fields.filter((f) => f.groupBy).map((f) => f.groupBy!.table),
+    ])]
     Promise.all(
       tables.map(async (table) => {
-        const lookup = fields.find((f) => f.lookup?.table === table)!.lookup!
+        const lookup = fields.find((f) => f.lookup?.table === table)?.lookup
         try {
-          const rows = await makeApi<any>(table).list({ orderBy: lookup.orderBy ?? lookup.labelKey, ascending: true })
+          const rows = await makeApi<any>(table).list(
+            lookup ? { orderBy: lookup.orderBy ?? lookup.labelKey, ascending: true } : {},
+          )
           if (!cancelled) setLookupOptions((prev) => ({ ...prev, [table]: rows }))
         } catch (e: any) {
           console.warn(`[lookup] failed to load options for ${table}:`, e?.message ?? e)
@@ -404,6 +419,22 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
     return row[lookup.labelKey] ?? ''
   }
 
+  // Grouped multiSelect: resolve each option's group through the join table
+  // (e.g. site.customerId → companies.id → companies.vendor). Options whose
+  // group row/label is missing land in the "Uncategorized" bucket.
+  const groupedMultiSelectOptions = (f: FieldConfig): GroupedOption[] => {
+    const group = f.groupBy!
+    const groups = allOptions[group.table] ?? []
+    return lookupRows(f).map((row) => {
+      const g = groups.find((x) => x[group.groupKey] === row[group.keyField])
+      return {
+        value: row[f.lookup!.valueKey],
+        label: lookupLabel(f, row),
+        group: g?.[group.groupLabel] ?? '',
+      }
+    })
+  }
+
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setError(null)
@@ -579,31 +610,40 @@ export function EntityFormModal({ open, onClose, title, fields, initial, onSubmi
                   </Select>
                 </div>
               ) : f.type === 'multiSelect' ? (
-                <div>
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-1 max-h-52 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 p-2">
-                    {/* Lookup-backed rows (existing) OR static options — the
-                        Scope of Work checkbox groups are static options. */}
-                    {(f.lookup
-                      ? lookupRows(f).map((row) => ({ value: row[f.lookup!.valueKey], label: lookupLabel(f, row) }))
-                      : (f.options ?? []).map((o) => ({ value: o, label: o.replace(/_/g, ' ') }))
-                    ).map(({ value: v, label }) => {
-                      const checked = (values[f.key] ?? []).includes(v)
-                      return (
-                        <label key={v} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer rounded px-1.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/50">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => set(f.key, checked
-                              ? (values[f.key] ?? []).filter((x: string) => x !== v)
-                              : [...(values[f.key] ?? []), v])}
-                          />
-                          {label}
-                        </label>
-                      )
-                    })}
+                f.groupBy ? (
+                  <GroupedMultiSelect
+                    label={f.label}
+                    options={groupedMultiSelectOptions(f)}
+                    value={values[f.key] ?? []}
+                    onChange={(v) => set(f.key, v)}
+                  />
+                ) : (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-1 max-h-52 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 p-2">
+                      {/* Lookup-backed rows (existing) OR static options — the
+                          Scope of Work checkbox groups are static options. */}
+                      {(f.lookup
+                        ? lookupRows(f).map((row) => ({ value: row[f.lookup!.valueKey], label: lookupLabel(f, row) }))
+                        : (f.options ?? []).map((o) => ({ value: o, label: o.replace(/_/g, ' ') }))
+                      ).map(({ value: v, label }) => {
+                        const checked = (values[f.key] ?? []).includes(v)
+                        return (
+                          <label key={v} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300 cursor-pointer rounded px-1.5 py-1 hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => set(f.key, checked
+                                ? (values[f.key] ?? []).filter((x: string) => x !== v)
+                                : [...(values[f.key] ?? []), v])}
+                            />
+                            {label}
+                          </label>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
+                )
               ) : f.type === 'lineItems' || f.type === 'catalogItems' ? (
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5">{f.label}</p>

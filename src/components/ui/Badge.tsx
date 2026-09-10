@@ -47,6 +47,8 @@ const statusMap: Record<string, string> = {
   under_review: 'amber', superseded: 'slate', archived: 'slate',
   // company
   active: 'green', inactive: 'slate',
+  // customer vendor
+  nokia: 'blue', huawei: 'red', other: 'slate',
   // resources
   available: 'green', in_use: 'blue', maintenance: 'amber', breakdown: 'red',
   on_leave: 'amber', sick: 'red', training: 'purple', unavailable: 'slate',

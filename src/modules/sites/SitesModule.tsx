@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
+import { useEntity } from '@/lib/hooks/useEntity'
 import { TABLES } from '@/lib/api/entityConfigs'
-import type { Site, SiteStatus, Technology } from '@/types'
+import type { Site, SiteStatus, Technology, Company } from '@/types'
 
 const ALL_STATUSES: SiteStatus[] = ['planned','survey','installation','integration','atp','acceptance','live','decommissioned']
 const ALL_TECHS: Technology[] = ['2G','3G','4G','4G+','5G','MW','VSAT']
@@ -25,6 +26,9 @@ type ViewMode = 'table' | 'grid'
 
 export function SitesModule() {
   const { data: sites, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<Site>(TABLES.sites, 'Site')
+  // Vendor is never stored on a site — it is resolved through the customer.
+  const { data: companies } = useEntity<Company>(TABLES.companies)
+  const vendorFor = (s: Site) => companies.find(c => c.id === s.customerId)?.vendor
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState<string>('all')
   const [filterTech, setFilterTech] = useState<string>('all')
@@ -166,7 +170,11 @@ export function SitesModule() {
               <div className="flex items-center gap-1 text-xs text-slate-500 mb-2">
                 <MapPin className="w-3 h-3" />{s.region} · {s.latitude?.toFixed?.(3)}, {s.longitude?.toFixed?.(3)}
               </div>
-              {s.customerName && <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">Customer: {s.customerName}</p>}
+              {s.customerName && (
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mb-2">
+                  Customer: {s.customerName}{vendorFor(s) ? ` · ${vendorFor(s)}` : ''}
+                </p>
+              )}
               <div className="flex flex-wrap gap-1 mb-3">
                 {(s.technology ?? []).map(t => <Badge key={t} status={t}>{t}</Badge>)}
                 {s.transmissionType && <Badge status="approved">{s.transmissionType}</Badge>}
@@ -199,6 +207,7 @@ export function SitesModule() {
                 { l: 'Site ID',   v: selected.siteId },
                 { l: 'Region',    v: selected.region },
                 { l: 'Customer',  v: selected.customerName ?? '—' },
+                { l: 'Vendor',    v: vendorFor(selected) ?? '—' },
                 { l: 'Status',    v: <Badge status={selected.status} /> },
                 { l: 'Latitude',  v: selected.latitude?.toFixed?.(6) },
                 { l: 'Longitude', v: selected.longitude?.toFixed?.(6) },

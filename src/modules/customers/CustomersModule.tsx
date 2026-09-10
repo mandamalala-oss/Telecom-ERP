@@ -121,6 +121,7 @@ export function CustomersModule() {
                 </div>
                 <h3 className="font-bold text-slate-900 dark:text-white">{co.name}</h3>
                 <p className="text-xs text-slate-500 mt-0.5">{COMPANY_TYPE_LABEL[co.type]}</p>
+                {co.vendor && <p className="text-xs font-semibold text-slate-600 dark:text-slate-300 mt-1">Vendor: {co.vendor}</p>}
                 <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700 grid grid-cols-2 gap-2">
                   <div>
                     <p className="text-xs text-slate-400">Location</p>
@@ -184,6 +185,7 @@ export function CustomersModule() {
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
               {[
                 { l: 'Type',     v: COMPANY_TYPE_LABEL[selected.type] },
+                { l: 'Vendor',   v: selected.vendor ?? '—' },
                 { l: 'Country',  v: selected.country },
                 { l: 'City',     v: selected.city },
                 { l: 'Website',  v: selected.website },

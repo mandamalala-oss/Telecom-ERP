@@ -175,6 +175,8 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   companies: [
     { key: 'name', label: 'Name', type: 'text', required: true },
     { key: 'type', label: 'Type', type: 'select', options: ['telecom_operator', 'tower_company', 'vendor', 'subcontractor', 'government'] },
+    // Vendor drives the site grouping in the Project form's site combobox.
+    { key: 'vendor', label: 'Vendor', type: 'select', options: ['Nokia', 'Huawei', 'other'] },
     { key: 'country', label: 'Country', type: 'text' },
     { key: 'city', label: 'City', type: 'text' },
     { key: 'address', label: 'Address', type: 'text' },
@@ -194,7 +196,9 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'siteId', label: 'Site ID', type: 'text', required: true, placeholder: 'MDG-TAN-001' },
     { key: 'name', label: 'Name', type: 'text', required: true },
     { key: 'region', label: 'Region', type: 'select', options: REGIONS },
-    { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { customerId: 'id' } } },
+    // A site MUST belong to a customer; its vendor is inherited through this
+    // link (companies.vendor), never stored on the site row.
+    { key: 'customerName', label: 'Customer', type: 'select', required: true, lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { customerId: 'id' } } },
     { key: 'latitude', label: 'Latitude', type: 'number' },
     { key: 'longitude', label: 'Longitude', type: 'number' },
     { key: 'technology', label: 'Technology', type: 'multiSelect', options: ['2G', '3G', '4G', '5G'] },
@@ -213,7 +217,12 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   ],
   projects: [
     { key: 'name', label: 'Name', type: 'text', required: true },
-    { key: 'siteIds', label: 'Sites', type: 'multiSelect', virtual: true, lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId' } },
+    // Searchable multi-select, grouped by the site's customer vendor. The
+    // vendor is resolved through companies (site.customerId → companies.id),
+    // never duplicated onto the site row.
+    { key: 'siteIds', label: 'Sites', type: 'multiSelect', virtual: true,
+      lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId' },
+      groupBy: { table: 'companies', keyField: 'customerId', groupKey: 'id', groupLabel: 'vendor' } },
     { key: 'customerName', label: 'Customer', type: 'select', lookup: { table: 'companies', valueKey: 'name', labelKey: 'name', populate: { customerId: 'id' } } },
     { key: 'status', label: 'Status', type: 'select', options: ['not_started', 'in_progress', 'on_hold', 'completed', 'cancelled'] },
     { key: 'currentPhase', label: 'Current Phase', type: 'select', options: ['survey', 'installation', 'integration', 'atp', 'acceptance'] },

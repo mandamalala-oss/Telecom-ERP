@@ -74,6 +74,9 @@ create table companies (
   id          uuid primary key default gen_random_uuid(),
   name        text not null,
   type        text not null check (type in ('telecom_operator','tower_company','vendor','subcontractor','government')),
+  -- Equipment vendor (Nokia / Huawei / other) — the source of truth for
+  -- grouping this customer's sites (migration 037).
+  vendor      text,
   country     text default 'Madagascar',
   city        text,
   address     text,

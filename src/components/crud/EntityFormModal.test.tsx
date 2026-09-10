@@ -208,6 +208,42 @@ describe('EntityFormModal — multiSelect', () => {
   })
 })
 
+describe('EntityFormModal — grouped multiSelect (sites by vendor)', () => {
+  const companies = [
+    { id: 'c1', name: 'Telma', vendor: 'Nokia' },
+    { id: 'c2', name: 'Orange', vendor: 'Huawei' },
+  ]
+  const groupedSites = [
+    { id: 's1', siteId: 'MDG-001', name: 'Site Alpha', customerId: 'c1' },
+    { id: 's2', siteId: 'MDG-002', name: 'Site Beta', customerId: 'c2' },
+    { id: 's3', siteId: 'MDG-003', name: 'Site Gamma' },
+  ]
+  const groupedFields: FieldConfig[] = [
+    {
+      key: 'siteIds', label: 'Sites', type: 'multiSelect', virtual: true,
+      lookup: { table: 'sites', valueKey: 'id', labelKey: 'name', labelFormat: '{siteId} — {name}', orderBy: 'siteId' },
+      groupBy: { table: 'companies', keyField: 'customerId', groupKey: 'id', groupLabel: 'vendor' },
+    },
+    { key: 'name', label: 'Name', type: 'text' },
+  ]
+
+  it('renders a searchable combobox grouped by the customer vendor and collects selections', async () => {
+    mocks.makeApi.mockImplementation((table: string) => ({
+      list: async () => (table === 'companies' ? companies : groupedSites),
+    }))
+    const onSubmit = renderForm(groupedFields)
+    await userEvent.type(screen.getByLabelText('Name'), 'X')
+    await userEvent.click(screen.getByLabelText('Sites'))
+    expect(await screen.findByRole('group', { name: 'Nokia' })).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'Huawei' })).toBeTruthy()
+    expect(screen.getByRole('group', { name: 'Uncategorized' })).toBeTruthy()
+    await userEvent.click(screen.getByRole('option', { name: 'MDG-002 — Site Beta' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled())
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ name: 'X', siteIds: ['s2'] })
+  })
+})
+
 describe('EntityFormModal — sitePicker', () => {
   const projectRows = [
     { id: 'p1', name: 'STARLINK', customerName: 'Telma', budget: 1_000_000, spent: 320_000, revenue: 2_500_000 },
