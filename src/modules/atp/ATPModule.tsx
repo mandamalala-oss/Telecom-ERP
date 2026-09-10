@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, CheckCircle, XCircle, MinusCircle, Download, Trash2, Pencil } from 'lucide-react'
+import { Plus, CheckCircle, XCircle, MinusCircle, Download, Trash2, Pencil, ListChecks } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -7,7 +7,9 @@ import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { TABLES } from '@/lib/api/entityConfigs'
 import { generateInvoiceForCertificate } from '@/lib/paymentAutomation'
-import type { ATPRecord, ATPTemplate, ATPResult, AcceptanceCertificate } from '@/types/v2'
+import { TemplateChecklistModal } from './TemplateChecklistModal'
+import { RecordResultsModal } from './RecordResultsModal'
+import type { ATPRecord, ATPTemplate, ATPResult, AcceptanceCertificate, ATPSection } from '@/types/v2'
 import { clsx } from 'clsx'
 
 const STATUS_FLOW = ['draft','submitted','reviewed','approved','customer_accepted','failed']
@@ -24,8 +26,8 @@ function ResultIcon({ result }: { result: ATPResult['result'] }) {
 }
 
 export function ATPModule() {
-  const { data: records, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<ATPRecord>(TABLES.atpRecords, 'ATP Record')
-  const { data: templates, openCreate: newTemplate, openEdit: editTemplate, remove: removeTemplate, modal: templateModal } = useEntityCrud<ATPTemplate>(TABLES.atpTemplates, 'ATP Template')
+  const { data: records, loading, error, openCreate, openEdit, remove, update: updateRecord, modal } = useEntityCrud<ATPRecord>(TABLES.atpRecords, 'ATP Record')
+  const { data: templates, openCreate: newTemplate, openEdit: editTemplate, remove: removeTemplate, update: updateTemplate, modal: templateModal } = useEntityCrud<ATPTemplate>(TABLES.atpTemplates, 'ATP Template')
   const [tab, setTab] = useState<CertTab>('records')
   const [actionError, setActionError] = useState<string | null>(null)
   // A signed PAC/FAC bills the project's matching payment milestone. Side
@@ -52,6 +54,26 @@ export function ATPModule() {
   const [selRecord, setSelRecord] = useState<ATPRecord | null>(null)
   const [selTemplate, setSelTemplate] = useState<ATPTemplate | null>(null)
   const [selCert, setSelCert] = useState<AcceptanceCertificate | null>(null)
+  // Custom editors (the JSONB checklist/results aren't editable via the form).
+  const [checklistTpl, setChecklistTpl] = useState<ATPTemplate | null>(null)
+  const [resultsRec, setResultsRec] = useState<ATPRecord | null>(null)
+
+  // A record's template: by stored id, falling back to name (older rows).
+  const templateFor = (rec: ATPRecord) =>
+    templates.find(t => (rec.templateId && t.id === rec.templateId) || t.name === rec.templateName)
+
+  const saveChecklist = async (sections: ATPSection[]) => {
+    if (!checklistTpl?.id) return
+    await updateTemplate(checklistTpl.id, { sections })
+    setChecklistTpl(null)
+  }
+  const saveResults = async (payload: {
+    results: ATPResult[]; passCount: number; failCount: number; naCount: number; overallResult: ATPRecord['overallResult']
+  }) => {
+    if (!resultsRec?.id) return
+    await updateRecord(resultsRec.id, payload)
+    setResultsRec(null)
+  }
 
   const isCertTab = tab === 'pac' || tab === 'fac'
   const certs = certData.filter(c => c.type === (tab === 'fac' ? 'FAC' : 'PAC'))
@@ -222,6 +244,7 @@ export function ATPModule() {
         <Modal open title={`ATP ${selRecord.atpNumber}`} onClose={() => setSelRecord(null)} size="xl"
           footer={
             <div className="flex justify-end gap-2">
+              <Button variant="secondary" icon={<ListChecks className="w-4 h-4" />} onClick={() => { setResultsRec(selRecord); setSelRecord(null) }}>Edit Results</Button>
               <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDelete(selRecord.id!)}>Delete</Button>
               <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { openEdit(selRecord); setSelRecord(null) }}>Edit</Button>
             </div>
@@ -287,7 +310,7 @@ export function ATPModule() {
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">Test Results</p>
               <div className="space-y-2">
                 {(selRecord.results??[]).map(r => {
-                  const template = templates.find(t => t.id === selRecord.templateId)
+                  const template = templateFor(selRecord)
                   const item = template?.sections?.flatMap(s => s.items).find(i => i.id === r.itemId)
                   return (
                     <div key={r.itemId} className={clsx('flex items-start gap-3 p-3 rounded-lg border',
@@ -333,6 +356,7 @@ export function ATPModule() {
         <Modal open title={selTemplate.name} onClose={() => setSelTemplate(null)} size="xl"
           footer={
             <div className="flex justify-end gap-2">
+              <Button variant="secondary" icon={<ListChecks className="w-4 h-4" />} onClick={() => { setChecklistTpl(selTemplate); setSelTemplate(null) }}>Edit Checklist</Button>
               <Button variant="danger" icon={<Trash2 className="w-4 h-4" />} onClick={() => handleDeleteTemplate(selTemplate.id!)}>Delete</Button>
               <Button icon={<Pencil className="w-4 h-4" />} onClick={() => { editTemplate(selTemplate); setSelTemplate(null) }}>Edit</Button>
             </div>
@@ -446,6 +470,20 @@ export function ATPModule() {
           </div>
         </Modal>
       )}
+
+      <TemplateChecklistModal
+        open={!!checklistTpl}
+        template={checklistTpl}
+        onClose={() => setChecklistTpl(null)}
+        onSave={saveChecklist}
+      />
+      <RecordResultsModal
+        open={!!resultsRec}
+        record={resultsRec}
+        template={resultsRec ? templateFor(resultsRec) ?? null : null}
+        onClose={() => setResultsRec(null)}
+        onSave={saveResults}
+      />
 
       {modal}
       {templateModal}
