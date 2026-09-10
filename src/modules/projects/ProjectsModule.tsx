@@ -10,8 +10,10 @@ import { useEntity } from '@/lib/hooks/useEntity'
 import { useSupplyItems, supplyTotals } from '@/lib/hooks/useSupplyItems'
 import { TABLES } from '@/lib/api/entityConfigs'
 import { projectFinance } from '@/lib/projectFinance'
+import { applyScheduleToProject, generateInvoiceForMilestone } from '@/lib/paymentAutomation'
 import { supabase } from '@/lib/supabase'
 import type { Project, PhaseDetail, ProjectSite, Site, SupplyItem, ProjectType, DeliveryStatus, Region, Quote, Company, Contact } from '@/types'
+import type { ProjectPaymentMilestone } from '@/types/v2'
 
 const fmt = (n: number | null | undefined) => {
   // Always the exact amount — never abbreviated (e.g. "3.3M Ar").
@@ -323,6 +325,8 @@ function SupplyProjectModal({ open, project, items, itemsLoading, editable, onCl
 export function ProjectsModule() {
   const { data: sites } = useEntity<Site>(TABLES.sites)
   const { data: projectSites, refresh: refreshProjectSites } = useEntity<ProjectSite>(TABLES.projectSites)
+  const { data: milestones, refresh: refreshMilestones } = useEntity<ProjectPaymentMilestone>(TABLES.projectPaymentMilestones)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   // Keep the junction table in sync when the form's site selection changes.
   // 1 project = many sites: `values` carries the virtual `siteId` multi-select
@@ -342,8 +346,21 @@ export function ProjectsModule() {
     await refreshProjectSites()
   }
 
+  // After any project save: sync sites, then reconcile the payment-milestone
+  // ledger with the saved schedule (creates the advance invoice if billed).
+  // Schedule errors must not hide a successful project save — surface them.
+  const afterProjectSave = async (row: Project, values: Record<string, any>) => {
+    await syncSites(row, values)
+    try {
+      await applyScheduleToProject(row)
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    }
+    await refreshMilestones()
+  }
+
   const { data: projects, loading, error, openCreate, openEdit, remove, create, update, refresh, modal, editable } = useEntityCrud<Project>(
-    TABLES.projects, 'Project', undefined, syncSites, undefined, syncSites
+    TABLES.projects, 'Project', undefined, afterProjectSave, undefined, afterProjectSave
   )
   const [selected, setSelected] = useState<Project | null>(null)
   const [filterStatus, setFilterStatus] = useState('all')
@@ -351,7 +368,6 @@ export function ProjectsModule() {
   const [filterCustomer, setFilterCustomer] = useState('')
   const [filterSite, setFilterSite] = useState('')
   const [filterType, setFilterType] = useState('')
-  const [actionError, setActionError] = useState<string | null>(null)
 
   // Supply/trading flow state
   const [typePickerOpen, setTypePickerOpen] = useState(false)
@@ -392,6 +408,19 @@ export function ProjectsModule() {
   }, [projectSites, sites])
   const selSites = selected ? sitesByProject.get(selected.id ?? '') ?? [] : []
   const selFin = projectFinance(selected?.budget, selected?.spent, selected?.revenue)
+  const selMilestones = selected ? milestones.filter(m => m.projectId === selected.id) : []
+
+  // Manually bill a still-pending milestone (PAC/FAC normally auto-bill when
+  // the matching certificate is signed; this covers 'manual' milestones).
+  const generateMilestone = async (m: ProjectPaymentMilestone) => {
+    try {
+      setActionError(null)
+      await generateInvoiceForMilestone(m)
+      await refreshMilestones()
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    }
+  }
 
   // ── Filter bar ─────────────────────────────────────────────────────────────
   // Search by name, customer_name, site code — AND logic, combined with the
@@ -863,6 +892,46 @@ export function ProjectsModule() {
                     <span key={m} className="px-3 py-1 bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold rounded-full">👷 {m}</span>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+          {/* Payment schedule — milestone billing ledger */}
+          {selMilestones.length > 0 && (
+            <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+              <div className="flex items-center justify-between mb-3">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Payment Schedule — {selected.paymentScheduleName ?? selMilestones[0].scheduleName}
+                </p>
+                <p className="text-xs text-slate-500">
+                  Total {fmt(selMilestones.reduce((s, m) => s + (m.amount ?? 0), 0))}
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-x-auto">
+                <table className="w-full min-w-[640px]">
+                  <thead className="bg-slate-50 dark:bg-slate-700/50">
+                    <tr>
+                      {['Milestone','Trigger','%','Amount','Due','Status','Invoice',''].map(h => <th key={h} className="th">{h}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selMilestones.map(m => (
+                      <tr key={m.id} className="border-t border-slate-100 dark:border-slate-700">
+                        <td className="td font-semibold">{m.name}</td>
+                        <td className="td text-xs uppercase text-slate-500">{m.trigger}</td>
+                        <td className="td text-xs">{m.pct}%</td>
+                        <td className="td font-bold">{fmt(m.amount)}</td>
+                        <td className="td text-xs text-slate-500">{m.dueDate ?? '—'}</td>
+                        <td className="td"><Badge status={m.status} /></td>
+                        <td className="td text-xs font-mono text-brand-600 dark:text-brand-400">{m.invoiceNumber ?? '—'}</td>
+                        <td className="td whitespace-nowrap">
+                          {editable && m.status === 'pending' && (
+                            <Button variant="secondary" onClick={() => generateMilestone(m)}>Generate invoice</Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

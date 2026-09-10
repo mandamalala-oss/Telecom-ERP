@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { TABLES } from '@/lib/api/entityConfigs'
+import { generateInvoiceForCertificate } from '@/lib/paymentAutomation'
 import type { ATPRecord, ATPTemplate, ATPResult, AcceptanceCertificate } from '@/types/v2'
 import { clsx } from 'clsx'
 
@@ -26,18 +27,31 @@ export function ATPModule() {
   const { data: records, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<ATPRecord>(TABLES.atpRecords, 'ATP Record')
   const { data: templates, openCreate: newTemplate, openEdit: editTemplate, remove: removeTemplate, modal: templateModal } = useEntityCrud<ATPTemplate>(TABLES.atpTemplates, 'ATP Template')
   const [tab, setTab] = useState<CertTab>('records')
+  const [actionError, setActionError] = useState<string | null>(null)
+  // A signed PAC/FAC bills the project's matching payment milestone. Side
+  // effect failures are surfaced, not thrown, so a saved certificate stays
+  // saved even when the invoice cannot be generated.
+  const certSaved = async (row: AcceptanceCertificate, previous?: AcceptanceCertificate | null) => {
+    if (row.status !== 'signed' || previous?.status === 'signed') return
+    try {
+      await generateInvoiceForCertificate(row)
+    } catch (e: any) {
+      setActionError(e.message ?? String(e))
+    }
+  }
   // PAC/FAC share one table; the active tab drives the certificate type on
   // create, while edits keep whatever type the row already has.
   const { data: certData, loading: certLoading, error: certError, openCreate: openCertCreate, openEdit: openCertEdit, remove: removeCert, modal: certModal } = useEntityCrud<AcceptanceCertificate>(
     TABLES.acceptanceCertificates,
     'Certificate',
-    undefined, undefined,
-    (v, editing) => ({ ...v, type: editing?.type ?? v.type ?? (tab === 'fac' ? 'FAC' : 'PAC') })
+    undefined,
+    (row) => certSaved(row),
+    (v, editing) => ({ ...v, type: editing?.type ?? v.type ?? (tab === 'fac' ? 'FAC' : 'PAC') }),
+    (row, _values, previous) => certSaved(row, previous)
   )
   const [selRecord, setSelRecord] = useState<ATPRecord | null>(null)
   const [selTemplate, setSelTemplate] = useState<ATPTemplate | null>(null)
   const [selCert, setSelCert] = useState<AcceptanceCertificate | null>(null)
-  const [actionError, setActionError] = useState<string | null>(null)
 
   const isCertTab = tab === 'pac' || tab === 'fac'
   const certs = certData.filter(c => c.type === (tab === 'fac' ? 'FAC' : 'PAC'))

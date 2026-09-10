@@ -191,6 +191,9 @@ export interface Project {
   deliveryStatus?: DeliveryStatus;
   poReference?: string;
   notes?: string;
+  /** Payment schedule template applied to this project (migration 036). */
+  paymentScheduleId?: string;
+  paymentScheduleName?: string;
   // ── Scope of Work (telecom site projects, migration 023) ──────────────────
   /** NSB (New Site Build) | MOD (Modification). */
   scopeBuildType?: ScopeBuildType;

@@ -262,6 +262,51 @@ export interface AcceptanceCertificate {
   createdAt: string
 }
 
+// ─── PAYMENT SCHEDULES (milestone billing) ───────────────────
+// A schedule template holds milestones (percent of project revenue) that
+// trigger invoices: 'advance' when the schedule is applied, 'PAC'/'FAC' when
+// the matching acceptance certificate is signed, 'manual' on demand.
+
+export type MilestoneTrigger = 'advance' | 'PAC' | 'FAC' | 'manual'
+export type MilestoneStatus = 'pending' | 'invoiced' | 'paid' | 'cancelled'
+
+export interface ScheduleMilestone {
+  id: string
+  name: string
+  pct: number
+  trigger: MilestoneTrigger
+  dueDays: number
+}
+
+export interface PaymentSchedule {
+  id: string
+  name: string
+  description?: string
+  milestones: ScheduleMilestone[]
+  isActive: boolean
+  createdAt: string
+}
+
+export interface ProjectPaymentMilestone {
+  id: string
+  projectId: string
+  projectName?: string
+  scheduleId?: string
+  scheduleName?: string
+  name: string
+  pct: number
+  trigger: MilestoneTrigger
+  dueDays: number
+  amount: number
+  status: MilestoneStatus
+  invoiceId?: string
+  invoiceNumber?: string
+  triggerCertificateId?: string
+  dueDate?: string
+  invoicedAt?: string
+  createdAt: string
+}
+
 // ─── BOQ MODULE ──────────────────────────────────────────────
 
 export type BOQStatus = 'draft' | 'submitted' | 'approved' | 'revised' | 'superseded'

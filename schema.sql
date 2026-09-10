@@ -16,6 +16,7 @@ create extension if not exists pgcrypto;
 
 -- ─── Clean slate (app tables only) ─────────────────────────────
 drop table if exists
+  project_payment_milestones, payment_schedules,
   contracts, documents, subcontractors, purchase_requests, tools, vehicles,
   employees, assets, boqs, acceptance_certificates, atp_records, atp_templates, integration_records,
   installation_records, survey_reports, evm_metrics, payments, purchase_orders,
@@ -157,6 +158,9 @@ create table projects (
   scope_mod_ran_add_items text[] default '{}',
   scope_mod_ran_swap_items text[] default '{}',
   scope_mod_mw_swap_dish_size text,
+  -- Payment schedule (milestone billing, migration 036):
+  payment_schedule_id   uuid,
+  payment_schedule_name text,
   created_at    timestamptz default now()
 );
 
@@ -770,6 +774,50 @@ create table contracts (
   documents          text[] default '{}',
   created_at         timestamptz default now()
 );
+
+-- ─── PAYMENT SCHEDULES (milestone billing, migration 036) ───────
+-- A schedule is a reusable template of milestones (percent of project
+-- revenue). Applying one to a project expands it into milestone rows; the
+-- 'advance' milestone is invoiced on apply, PAC/FAC milestones when the
+-- matching acceptance certificate is signed.
+create table payment_schedules (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null,
+  description text,
+  milestones  jsonb default '[]',
+  is_active   boolean default true,
+  created_at  timestamptz default now()
+);
+
+create table project_payment_milestones (
+  id                      uuid primary key default gen_random_uuid(),
+  project_id              uuid references projects(id) on delete cascade,
+  project_name            text,
+  schedule_id             uuid references payment_schedules(id),
+  schedule_name           text,
+  name                    text not null,
+  pct                     numeric(5,2) default 0,
+  trigger                 text not null default 'manual' check (trigger in ('advance','PAC','FAC','manual')),
+  due_days                integer default 0,
+  amount                  bigint default 0,
+  status                  text not null default 'pending' check (status in ('pending','invoiced','paid','cancelled')),
+  invoice_id              uuid references invoices(id),
+  invoice_number          text,
+  trigger_certificate_id  uuid references acceptance_certificates(id),
+  due_date                date,
+  invoiced_at             timestamptz,
+  created_at              timestamptz default now()
+);
+
+insert into payment_schedules (name, description, milestones, is_active) values
+  ('20/65/15 — Advance / PAC / FAC',
+   '20% advance before works, 65% after preliminary acceptance (PAC), 15% after final acceptance (FAC).',
+   '[{"id":"adv","name":"Advance","pct":20,"trigger":"advance","dueDays":0},{"id":"pac","name":"After PAC","pct":65,"trigger":"PAC","dueDays":0},{"id":"fac","name":"After FAC","pct":15,"trigger":"FAC","dueDays":0}]'::jsonb,
+   true),
+  ('100% after FAC (90 days)',
+   'Full payment 90 days after final acceptance (FAC).',
+   '[{"id":"fac","name":"After FAC (90d)","pct":100,"trigger":"FAC","dueDays":90}]'::jsonb,
+   true);
 
 -- ─── updated_at triggers ────────────────────────────────────────
 create or replace function set_updated_at() returns trigger language plpgsql as $$

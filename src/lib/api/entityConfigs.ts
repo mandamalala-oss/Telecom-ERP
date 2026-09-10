@@ -27,6 +27,8 @@ export const TABLES = {
   atpTemplates: 'atp_templates',
   atpRecords: 'atp_records',
   acceptanceCertificates: 'acceptance_certificates',
+  paymentSchedules: 'payment_schedules',
+  projectPaymentMilestones: 'project_payment_milestones',
   boqs: 'boqs',
   catalogItems: 'catalog_items',
   assets: 'assets',
@@ -66,6 +68,8 @@ export const TABLE_MODULE: Record<string, string> = {
   atpTemplates: 'projects', // ATP is guarded by 'projects'
   atpRecords: 'projects',
   acceptanceCertificates: 'projects', // PAC/FAC live inside the ATP module
+  paymentSchedules: 'finance', // milestone billing templates
+  projectPaymentMilestones: 'finance',
   boqs: 'finance', // BOQ is guarded by 'finance'
   assets: 'inventory',
   employees: 'dashboard', // Resources is guarded by 'dashboard'
@@ -218,6 +222,10 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'budget', label: 'BAC (Ar)', type: 'number' },
     { key: 'spent', label: 'AC — Actual Cost (Ar)', type: 'number' },
     { key: 'revenue', label: 'PO (Ar)', type: 'number' },
+    // Milestone billing template: applying one generates the project's
+    // payment-milestone ledger (and the advance invoice, if any).
+    { key: 'paymentScheduleId', label: 'Payment Schedule', type: 'select', section: 'Payment Schedule',
+      lookup: { table: 'payment_schedules', valueKey: 'id', labelKey: 'name', orderBy: 'name', populate: { paymentScheduleName: 'name' } } },
     { key: 'pm', label: 'Project Manager', type: 'select', lookup: { table: 'employees', valueKey: 'name', labelKey: 'name', labelFormat: '{name} ({department})', orderBy: 'name', filter: (r: any) => r.role === 'Manager' && r.department === 'Project' } },
     { key: 'progress', label: 'Progress %', type: 'number' },
     { key: 'region', label: 'Region', type: 'select', options: REGIONS },
@@ -444,6 +452,23 @@ export const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
     { key: 'dlpStartDate', label: 'DLP Start', type: 'date' },
     { key: 'dlpEndDate', label: 'DLP End', type: 'date' },
     { key: 'comments', label: 'Comments', type: 'textarea' },
+  ],
+  payment_schedules: [
+    { key: 'name', label: 'Name', type: 'text', required: true },
+    { key: 'description', label: 'Description', type: 'textarea' },
+    { key: 'isActive', label: 'Active', type: 'checkbox' },
+  ],
+  project_payment_milestones: [
+    { key: 'projectName', label: 'Project', type: 'select', lookup: { table: 'projects', valueKey: 'name', labelKey: 'name', populate: { projectId: 'id' } } },
+    { key: 'scheduleName', label: 'Schedule', type: 'text' },
+    { key: 'name', label: 'Milestone', type: 'text', required: true },
+    { key: 'pct', label: '%', type: 'number' },
+    { key: 'trigger', label: 'Trigger', type: 'select', options: ['advance', 'PAC', 'FAC', 'manual'] },
+    { key: 'dueDays', label: 'Due Days', type: 'number' },
+    { key: 'amount', label: 'Amount (Ar)', type: 'number' },
+    { key: 'status', label: 'Status', type: 'select', options: ['pending', 'invoiced', 'paid', 'cancelled'] },
+    { key: 'invoiceNumber', label: 'Invoice', type: 'text' },
+    { key: 'dueDate', label: 'Due Date', type: 'date' },
   ],
   boqs: [
     // RAN/MW toggle sits ABOVE everything else: it is required before the
