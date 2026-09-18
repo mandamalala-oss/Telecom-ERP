@@ -1,14 +1,105 @@
-import { useState } from 'react'
-import { AlertTriangle, Plus, Trash2, Pencil } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { AlertTriangle, Plus, Trash2, Pencil, Upload } from 'lucide-react'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
 import { Modal } from '@/components/ui/Modal'
 import { useEntityCrud } from '@/lib/hooks/useEntityCrud'
 import { TABLES } from '@/lib/api/entityConfigs'
+import { supabase } from '@/lib/supabase'
 import type { Subcontractor } from '@/types/v2'
 import { clsx } from 'clsx'
 import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer, Tooltip } from 'recharts'
+import * as XLSX from 'xlsx'
+
+// ─── Import Excel ────────────────────────────────────────────────
+// Doit correspondre exactement aux en-têtes du modèle "Sous-traitants"
+const EXCEL_HEADERS = {
+  company: 'Entreprise*',
+  contact: 'Personne de contact*',
+  email: 'Email*',
+  phone: 'Téléphone',
+  specializations: 'Spécialisations',
+  technologies: 'Technologies',
+  regions: 'Régions',
+  contractValue: 'Valeur du contrat (Ar)',
+  activeProjects: 'Projets actifs',
+  completedProjects: 'Projets terminés',
+  certifications: 'Certifications',
+  approved: 'Approuvé',
+} as const
+
+type ImportRow = Record<string, any>
+
+function splitList(value: unknown): string[] {
+  if (!value) return []
+  return String(value)
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean)
+}
+
+function toNumber(value: unknown): number {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : 0
+}
+
+function toBool(value: unknown): boolean {
+  const v = String(value ?? '').trim().toUpperCase()
+  return v === 'VRAI' || v === 'TRUE' || v === '1'
+}
+
+interface ImportResult {
+  inserted: number
+  skipped: { row: number; reason: string }[]
+}
+
+async function parseAndMapExcel(file: File): Promise<{ payload: any[]; skipped: ImportResult['skipped'] }> {
+  const buffer = await file.arrayBuffer()
+  const workbook = XLSX.read(buffer, { type: 'array' })
+
+  // Cherche l'onglet "Sous-traitants", sinon prend le premier onglet
+  const sheetName = workbook.SheetNames.includes('Sous-traitants')
+    ? 'Sous-traitants'
+    : workbook.SheetNames[0]
+  const sheet = workbook.Sheets[sheetName]
+  const rows: ImportRow[] = XLSX.utils.sheet_to_json(sheet, { defval: '' })
+
+  const payload: any[] = []
+  const skipped: ImportResult['skipped'] = []
+
+  rows.forEach((row, idx) => {
+    const excelRowNumber = idx + 2 // +1 pour l'en-tête, +1 pour l'index 0-based
+    const companyName = String(row[EXCEL_HEADERS.company] ?? '').trim()
+    const contactPerson = String(row[EXCEL_HEADERS.contact] ?? '').trim()
+    const email = String(row[EXCEL_HEADERS.email] ?? '').trim()
+
+    if (!companyName || !contactPerson || !email) {
+      skipped.push({
+        row: excelRowNumber,
+        reason: !companyName ? 'Entreprise manquante' : !contactPerson ? 'Contact manquant' : 'Email manquant',
+      })
+      return
+    }
+
+    payload.push({
+      company_name: companyName,
+      contact_person: contactPerson,
+      email,
+      phone: String(row[EXCEL_HEADERS.phone] ?? '').trim() || null,
+      specializations: splitList(row[EXCEL_HEADERS.specializations]),
+      technologies: splitList(row[EXCEL_HEADERS.technologies]),
+      regions: splitList(row[EXCEL_HEADERS.regions]),
+      contract_value: toNumber(row[EXCEL_HEADERS.contractValue]),
+      active_projects: toNumber(row[EXCEL_HEADERS.activeProjects]),
+      completed_projects: toNumber(row[EXCEL_HEADERS.completedProjects]),
+      certifications: splitList(row[EXCEL_HEADERS.certifications]),
+      is_approved: toBool(row[EXCEL_HEADERS.approved]),
+    })
+  })
+
+  return { payload, skipped }
+}
 
 const RATING_COLOR: Record<string,string> = { A:'bg-green-100 text-green-700', B:'bg-blue-100 text-blue-700', C:'bg-amber-100 text-amber-700', D:'bg-red-100 text-red-700', F:'bg-red-200 text-red-900' }
 const fmt = (n: number) => `${((n??0)/1e6).toFixed(1)}M Ar`
@@ -39,8 +130,40 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
 }
 
 export function SubcontractorModule() {
-  const { data: subs, loading, error, openCreate, openEdit, remove, modal } = useEntityCrud<Subcontractor>(TABLES.subcontractors, 'Subcontractor')
+  const { data: subs, loading, error, openCreate, openEdit, remove, modal, refresh } = useEntityCrud<Subcontractor>(TABLES.subcontractors, 'Subcontractor')
   const [selSub, setSelSub] = useState<Subcontractor | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [importSummary, setImportSummary] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleImportClick = () => fileInputRef.current?.click()
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = '' // permet de réimporter le même fichier deux fois de suite
+    if (!file) return
+
+    setImporting(true)
+    setImportSummary(null)
+    try {
+      const { payload, skipped } = await parseAndMapExcel(file)
+
+      if (payload.length > 0) {
+        const { error: insertError } = await supabase.from('subcontractors').insert(payload)
+        if (insertError) throw insertError
+      }
+
+      await refresh?.()
+
+      const parts = [`${payload.length} sous-traitant(s) importé(s)`]
+      if (skipped.length > 0) parts.push(`${skipped.length} ignoré(s) : ${skipped.map(s => `ligne ${s.row} (${s.reason})`).join(', ')}`)
+      setImportSummary(parts.join(' — '))
+    } catch (err: any) {
+      setImportSummary(`Échec de l'import : ${err.message ?? 'erreur inconnue'}`)
+    } finally {
+      setImporting(false)
+    }
+  }
 
   const avgScore  = subs.length > 0 ? Math.round(subs.reduce((s,sub)=>s+scoresOf(sub).overallScore,0)/subs.length) : 0
   const topSub    = [...subs].sort((a,b)=>scoresOf(b).overallScore-scoresOf(a).overallScore)[0]
@@ -66,7 +189,16 @@ export function SubcontractorModule() {
 
       {error && <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 rounded-lg p-3">{error}</div>}
       {loading && <p className="text-xs text-slate-500">Loading…</p>}
-      <div className="flex justify-end">
+      {importSummary && (
+        <div className={clsx('text-sm rounded-lg p-3', importSummary.startsWith('Échec') ? 'text-red-600 bg-red-50 dark:bg-red-900/20' : 'text-green-700 bg-green-50 dark:bg-green-900/20')}>
+          {importSummary}
+        </div>
+      )}
+      <div className="flex justify-end gap-2">
+        <input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleImportFile} className="hidden" />
+        <Button variant="secondary" icon={<Upload className="w-4 h-4"/>} onClick={handleImportClick} disabled={importing}>
+          {importing ? 'Import en cours…' : 'Importer Excel'}
+        </Button>
         <Button icon={<Plus className="w-4 h-4"/>} onClick={openCreate}>New Subcontractor</Button>
       </div>
 
