@@ -148,13 +148,13 @@ export function GanttChart({ tasks }: { tasks: Task[] }) {
         ti++
         const s = start <= end ? start : end
         const e = start <= end ? end : start
-        const isMilestone = !!task.milestone || (!!explicitStart && !!due && explicitStart.getTime() === due.getTime())
+        const isMilestone = !!task.isMilestone || (!!explicitStart && !!due && explicitStart.getTime() === due.getTime())
         rows.push({
           task,
           start: s,
           end: e,
           duration: isMilestone ? 0 : daySpan(s, e),
-          percent: task.percentComplete ?? STATUS_PROGRESS[task.status],
+          percent: STATUS_PROGRESS[task.status],
           isMilestone,
           wbs: `${gi}.${ti}`,
         })
